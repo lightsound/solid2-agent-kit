@@ -92,7 +92,17 @@ if (corpus.length < 10_000) {
 
 const createApis = extractCreateApis();
 const allApis = [...new Set([...createApis, ...REQUIRED_APIS])].sort();
-const missing = allApis.filter((name) => !new RegExp(`\\b${name}\\b`).test(corpus));
+
+// Require a code-like occurrence, not a prose word: several APIs are common
+// English words (merge, action, deep, latest, resolve, render, flush) and a
+// plain \b word \b test would keep passing on prose even after the API was
+// removed from the docs. Accepted contexts: backticked (`name`), an import
+// or JSX position ({ name, <name), or a call (name().
+function appearsAsCode(name) {
+  return new RegExp(`[\`{,<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
+}
+
+const missing = allApis.filter((name) => !appearsAsCode(name));
 
 if (missing.length > 0) {
   console.error('docs-drift — APIs referenced by this kit are missing from the official Solid 2.0 corpus:');

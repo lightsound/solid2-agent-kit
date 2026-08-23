@@ -46,10 +46,14 @@ Until the package is published to npm, run it straight from GitHub:
 npx github:lightsound/solid2-agent-kit init
 ```
 
-Wire the gate into the consuming project, e.g. in `package.json`:
+So that agents (and CI) can run the gate by name, add the kit as a devDependency and wire a
+script in the consuming project's `package.json`:
 
 ```json
-{ "scripts": { "lint:solid": "solid2-kit check" } }
+{
+  "devDependencies": { "solid2-agent-kit": "github:lightsound/solid2-agent-kit" },
+  "scripts": { "lint:solid": "solid2-kit check" }
+}
 ```
 
 ## Why not eslint-plugin-solid?
@@ -67,9 +71,11 @@ Solid 2.0 is young and its docs move. A weekly GitHub Actions job
 (`.github/workflows/docs-drift.yml`) fetches the official docs corpus
 ([llms-full.txt](https://v2-rebuild--solid-docs-v2.netlify.app/llms-full.txt)) and verifies
 that every API the kit recommends still exists: `create*` primitives are auto-extracted from
-the kit content, the rest come from an explicit list in `scripts/check-docs-drift.mjs`. If
-Solid renames or removes an API, the job fails and the kit content gets fixed before it
-teaches agents stale names.
+the kit content, the rest come from an explicit list in `scripts/check-docs-drift.mjs`.
+Matching requires code-like contexts (backticked, import/JSX position, or a call), so
+common-word APIs such as `merge` or `action` cannot pass on prose alone. If Solid renames or
+removes an API, the job fails and the kit content gets fixed before it teaches agents stale
+names.
 
 Note: the canonical docs site https://v2.solidjs.com/ sits behind bot protection, so the kit
 (and the guidance it installs) points agents at the official markdown mirror

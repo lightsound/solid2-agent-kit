@@ -15,6 +15,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -41,7 +42,9 @@ function upsertManagedBlock(filePath, blockId, body, createPreamble) {
 
   let content = existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
   if (content.includes(start) && content.includes(end)) {
-    content = content.replace(new RegExp(`${start}[\\s\\S]*?${end}`), block);
+    // Function replacement: a plain string would have `$&`/`$'`-style
+    // sequences in the body interpreted as replacement patterns.
+    content = content.replace(new RegExp(`${start}[\\s\\S]*?${end}`), () => block);
   } else {
     const base = content.trim() ? content.trimEnd() : (createPreamble ?? '').trimEnd();
     content = `${base}${base ? '\n\n' : ''}${block}\n`;
@@ -57,6 +60,9 @@ function writeKitOwnedFile(filePath, body) {
 }
 
 function copySkill(targetSkillDir) {
+  // The skill directory is kit-owned: remove it first so files deleted in
+  // newer kit versions do not linger after a sync.
+  rmSync(targetSkillDir, { recursive: true, force: true });
   mkdirSync(targetSkillDir, { recursive: true });
   cpSync(join(KIT_ROOT, 'files/skills/solid-2'), targetSkillDir, { recursive: true });
   return targetSkillDir;

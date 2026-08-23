@@ -22,7 +22,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/lightsound/solid2-agent-kit"
+    "url": "git+https://github.com/lightsound/solid2-agent-kit.git"
+  },
+  "homepage": "https://github.com/lightsound/solid2-agent-kit#readme",
+  "bugs": {
+    "url": "https://github.com/lightsound/solid2-agent-kit/issues"
   },
   "keywords": [
     "solid",
