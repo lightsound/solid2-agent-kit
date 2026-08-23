@@ -34,6 +34,10 @@ function flagValue(name, fallback) {
 
 // --- init / sync ------------------------------------------------------------
 
+function countOccurrences(haystack, needle) {
+  return haystack.split(needle).length - 1;
+}
+
 function upsertManagedBlock(filePath, blockId, body, createPreamble) {
   const start = `<!-- solid2-agent-kit:${blockId}:start -->`;
   const end = `<!-- solid2-agent-kit:${blockId}:end -->`;
@@ -41,13 +45,24 @@ function upsertManagedBlock(filePath, blockId, body, createPreamble) {
   const block = `${start}\n${note}\n\n${body.trim()}\n\n${end}`;
 
   let content = existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
-  if (content.includes(start) && content.includes(end)) {
+  const starts = countOccurrences(content, start);
+  const ends = countOccurrences(content, end);
+
+  if (starts === 1 && ends === 1) {
     // Function replacement: a plain string would have `$&`/`$'`-style
     // sequences in the body interpreted as replacement patterns.
     content = content.replace(new RegExp(`${start}[\\s\\S]*?${end}`), () => block);
-  } else {
+  } else if (starts === 0 && ends === 0) {
     const base = content.trim() ? content.trimEnd() : (createPreamble ?? '').trimEnd();
     content = `${base}${base ? '\n\n' : ''}${block}\n`;
+  } else {
+    // Malformed markers (a stray delete or a duplicated block). Touching the
+    // file could swallow user content between mismatched markers, so leave
+    // it alone and ask for a manual fix.
+    console.warn(
+      `solid2-kit — warning: malformed managed-block markers in ${filePath} (${starts} start / ${ends} end for "${blockId}"). File left untouched; repair the markers and re-run sync.`,
+    );
+    return null;
   }
   writeFileSync(filePath, content);
   return filePath;
@@ -120,7 +135,7 @@ function init() {
   );
 
   console.log(`solid2-agent-kit v${VERSION} — installed for ${[wantCursor && 'Cursor', wantClaude && 'Claude Code'].filter(Boolean).join(' + ')}:`);
-  for (const path of written) console.log(`  ${relative(target, path) || '.'}`);
+  for (const path of written.filter(Boolean)) console.log(`  ${relative(target, path) || '.'}`);
 }
 
 // --- check ------------------------------------------------------------------
