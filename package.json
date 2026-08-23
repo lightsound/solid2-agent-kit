@@ -1,0 +1,37 @@
+{
+  "name": "solid2-agent-kit",
+  "version": "0.1.0",
+  "description": "Teach AI coding agents (Cursor, Claude Code) to write correct Solid 2.0 instead of React or Solid 1.x — always-applied rules, an agent skill, and a mechanical pattern gate.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "solid2-agent-kit": "bin/solid2-kit.mjs",
+    "solid2-kit": "bin/solid2-kit.mjs"
+  },
+  "files": [
+    "bin",
+    "files",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check:drift": "node scripts/check-docs-drift.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lightsound/solid2-agent-kit"
+  },
+  "keywords": [
+    "solid",
+    "solid-js",
+    "solid-2",
+    "ai-agents",
+    "cursor",
+    "claude-code",
+    "agents-md",
+    "skills"
+  ]
+}
