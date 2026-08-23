@@ -211,6 +211,15 @@ const CHECKS = [
     pattern: /\skey=\{/g,
     message: 'React `key` prop has no meaning in Solid. Row identity belongs on <For keyed={...}>.',
   },
+  {
+    // A non-null assertion on a zero-arg call is almost always a reactive read
+    // narrowed by hand (`error()!.message`). Common zero-arg stdlib methods
+    // that legitimately pair with `!` are excluded.
+    id: 'accessor-non-null',
+    pattern: /(?<!\.pop|\.shift|\.next)\(\)!/g,
+    message:
+      'Non-null assertion on a zero-arg call. Narrow reactive reads with <Show when={...}> and its function child (narrowed accessor); use an explicit guard variable for non-reactive calls.',
+  },
 ];
 
 // .ts / .tsx sources, excluding .d.ts declaration files.
