@@ -1,0 +1,21 @@
+name: docs-drift
+
+on:
+  schedule:
+    # Weekly, Monday 06:00 UTC — Solid 2.0 is young and its docs move.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cross-check kit APIs against official Solid 2.0 docs corpus
+        run: node scripts/check-docs-drift.mjs
