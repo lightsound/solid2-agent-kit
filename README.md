@@ -13,10 +13,10 @@ Supported agents: **Cursor** and **Claude Code**.
 
 | Layer | Cursor | Claude Code | Role |
 |---|---|---|---|
-| Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 16 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
+| Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 17 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
 | Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables (state placement, effect-or-not), canonical patterns verified against official docs, review checklist, official-doc URL index |
 | Shared agent context | managed block in `AGENTS.md` | same (Claude Code users can reference it from `CLAUDE.md`) | Core principles and pointers, always in context |
-| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}`: fails on props destructuring (including multi-line signatures), React imports/hooks/JSX props, Solid 1.x imports/APIs/components, `Context.Provider`, camelCase style keys, `key` props |
+| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}`: fails on props destructuring (including multi-line signatures), React imports/hooks/JSX props, Solid 1.x imports/APIs/components, `Context.Provider`, camelCase style keys, `key` props, and `value()!` hand-narrowing (use `<Show>`) |
 
 Managed blocks are delimited with `<!-- solid2-agent-kit:*:start/end -->` markers; everything
 outside them is yours. Kit-owned files (`solid-2.mdc`, the skill directories) are overwritten
@@ -52,7 +52,7 @@ script in the consuming project's `package.json`:
 ```json
 {
   "devDependencies": { "solid2-agent-kit": "github:lightsound/solid2-agent-kit" },
-  "scripts": { "lint:solid": "solid2-kit check" }
+  "scripts": { "lint:solid": "solid2-agent-kit check" }
 }
 ```
 
@@ -62,8 +62,8 @@ script in the consuming project's `package.json`:
 flags correct Solid 2 idioms — two-phase `createEffect(compute, apply)`, writable derivations
 (`createSignal(fn)`), draft store setters — steering agents back toward 1.x patterns. This
 kit carries over the plugin's still-valid intents (`no-destructure`,
-`components-return-once`, `reactivity`, `prefer-for`, `no-innerhtml`, `style-prop`, ...) as
-documented rules plus a regex gate, without the 1.x false positives.
+`components-return-once`, `reactivity`, `prefer-for`, `prefer-show`, `no-innerhtml`,
+`style-prop`, ...) as documented rules plus a regex gate, without the 1.x false positives.
 
 ## Docs-drift CI
 
