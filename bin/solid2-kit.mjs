@@ -220,6 +220,20 @@ const CHECKS = [
     message:
       'Non-null assertion on a zero-arg call. Narrow reactive reads with <Show when={...}> and its function child (narrowed accessor); use an explicit guard variable for non-reactive calls.',
   },
+  {
+    id: 'manual-loading-signal',
+    pattern: /\[\s*(?:is)?[Ll]oading\s*,|\bset(?:Is)?Loading\s*\(/g,
+    message:
+      'Hand-rolled loading state. First-load UI belongs to a <Loading> fallback, refetch indicators to isPending(), in-flight values to latest(). Model the async work as a computation (promise / async iterable), not signals.',
+  },
+  {
+    // A zero-arg call compared against undefined/null is a manual async
+    // readiness branch (`data() === undefined ? ... : ...`).
+    id: 'async-undefined-check',
+    pattern: /\(\)\s*[!=]==?\s*(?:undefined|null)\b|\b(?:undefined|null)\s*[!=]==?\s*\w+\(\)/g,
+    message:
+      'Readiness branch on a zero-arg call. Read async values under <Loading> (first load) / isPending() (refetch) and let errors reach <Errored>. For non-reactive utils, assign to a variable and test that.',
+  },
 ];
 
 // .ts / .tsx sources, excluding .d.ts declaration files.
