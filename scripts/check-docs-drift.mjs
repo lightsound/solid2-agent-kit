@@ -60,6 +60,10 @@ const BANNED_CREATE = new Set([
   'createDeferred',
 ]);
 
+// User-defined custom primitives that appear in kit examples (idiomatically
+// named create*) but are not Solid APIs.
+const EXAMPLE_CREATE = new Set(['createSubscriptionQuery']);
+
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
@@ -73,7 +77,7 @@ function extractCreateApis() {
   for (const file of walk(join(KIT_ROOT, 'files'))) {
     const content = readFileSync(file, 'utf8');
     for (const match of content.matchAll(/\bcreate[A-Z]\w+/g)) {
-      if (!BANNED_CREATE.has(match[0])) found.add(match[0]);
+      if (!BANNED_CREATE.has(match[0]) && !EXAMPLE_CREATE.has(match[0])) found.add(match[0]);
     }
   }
   return [...found].sort();
