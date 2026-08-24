@@ -24,30 +24,28 @@ on sync.
 
 ## Usage
 
+GitHub is the canonical distribution channel (the kit is intentionally not published to
+npm; consumers pin a commit through their lockfile):
+
 ```sh
 # install guidance for both Cursor and Claude Code (default)
-npx solid2-agent-kit init          # or: bunx solid2-agent-kit init
+npx github:lightsound/solid2-agent-kit init
 
 # one tool only
-npx solid2-agent-kit init --cursor
-npx solid2-agent-kit init --claude
+npx github:lightsound/solid2-agent-kit init --cursor
+npx github:lightsound/solid2-agent-kit init --claude
 
 # run the mechanical pattern gate (default source dir: src)
-npx solid2-agent-kit check
-npx solid2-agent-kit check --dir app
+npx github:lightsound/solid2-agent-kit check
+npx github:lightsound/solid2-agent-kit check --dir app
 
 # pull in kit updates later (idempotent; replaces managed blocks and kit-owned files)
-npx solid2-agent-kit@latest sync
-```
-
-Until the package is published to npm, run it straight from GitHub:
-
-```sh
-npx github:lightsound/solid2-agent-kit init
+npx github:lightsound/solid2-agent-kit sync
 ```
 
 So that agents (and CI) can run the gate by name, add the kit as a devDependency and wire a
-script in the consuming project's `package.json`:
+script in the consuming project's `package.json` (with a local install, `npx`/`bunx`
+resolve the project-local bin, so the bare name is safe there):
 
 ```json
 {
@@ -55,6 +53,10 @@ script in the consuming project's `package.json`:
   "scripts": { "lint:solid": "solid2-agent-kit check" }
 }
 ```
+
+Update later with `bun update solid2-agent-kit` (or the npm/pnpm equivalent) followed by
+`npx solid2-agent-kit sync`. Outside a project that has the kit installed, always use the
+`npx github:...` form — the bare package name is not claimed on the npm registry.
 
 ## Why not eslint-plugin-solid?
 
