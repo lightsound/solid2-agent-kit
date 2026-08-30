@@ -235,7 +235,7 @@ directory (default `src/`).
 | `import ... from "solid-js/store"` or `"solid-js/web"` | stores/`merge`/`omit` from `"solid-js"`; `render`/`hydrate`/`Portal`/`Dynamic` from `"@solidjs/web"` |
 | `createResource` | async `createMemo` + `<Loading>`/`<Errored>`; `refresh()`, `latest()`, `isPending()` |
 | `createEffect(fn)` (one arg), `on(...)` | `createEffect(compute, apply)`; deps belong in `compute` |
-| `onMount` / `onCleanup` in a component body | `onSettled` (return cleanup from its callback); `onCleanup` is for custom primitives |
+| `onMount` | `onSettled` (return cleanup from its callback) |
 | `batch(...)` | delete it — writes auto-batch; `flush()` only to observe synchronously |
 | `<Suspense>`, `<ErrorBoundary>`, `<SuspenseList>` | `<Loading>`, `<Errored>` (fallback gets an error *accessor*), `<Reveal>` |
 | `<Index>` | `<For keyed={false}>` |
