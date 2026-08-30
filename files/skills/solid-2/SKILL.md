@@ -67,7 +67,8 @@ Most React `useEffect` code should NOT become `createEffect`:
 | Inspect, count, or iterate children | `children(() => props.children)` then `.toArray()` |
 | Code-split a component | `lazy(() => import("./X"))` read under `<Loading>` |
 | Named export from a lazy module | `lazy(() => import("./pages"), { export: "About" })` |
-| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity) |
+| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity; prefer over `<Dynamic>`) |
+| Overlay / modal | `<Portal>` — hoist async reads *above* the portal (reads inside start on the client) |
 | Browser-only widget (charts, maps, `window`) | `clientOnly(() => import("./Chart"))` from `@solidjs/web` (`{ lazy: true }` defers the import until first render) |
 | Server vs browser branch | `isServer` / `isDev` from `@solidjs/web` (build-time constants), not `typeof window` |
 | SSR-stable `id` / `for` / `aria-*` pairing | `createUniqueId()` |
@@ -199,7 +200,8 @@ const Result = dynamic(() => (detailed() ? Detailed : Compact));
 `dynamic()` returns a **stable** component whose source can be a component, an
 intrinsic tag name, a promise, or empty. Prefer it over swapping a component
 variable in JSX (`const View = tab() ? A : B` freezes the choice at setup).
-`<Dynamic>` is the JSX spelling of the same primitive.
+`<Dynamic>` is the JSX spelling of the same primitive; application code should
+use `dynamic()` so the component identity stays stable.
 
 ### Two-phase effect (imperative boundary only)
 
@@ -245,15 +247,18 @@ return (
   where the memo was created, and not of page chrome (header/nav) that should stay mounted.
   Boundary placement is purely a UX decision — it does not change when fetches start
   (no waterfalls: nested components set up and fetch in parallel). After first paint the
-  boundary keeps settled content during refetch; `isPending(() => results())` is the
+  boundary keeps settled content during refetch; `isPending(results)` (pass the accessor,
+  not `isPending(results())`) is the
   indicator. Use `on={query()}` (the **value**, not the accessor `on={query}`) only when
   that identity should put the fallback back on screen.
+  Do not use `isPending` as the first-load spinner.
 - Read every reactive input **before the first `await`** in an async computation. A read
   after `await` does not subscribe; production can sit pending with no retry.
 - `<Errored>` function fallbacks receive an error **accessor** and a `reset` callback:
   `fallback={(error, reset) => ...}`.
-- Refetch: `refresh(results)`. In-flight indicator: `isPending(() => results())`.
-  Freshest in-flight value for imperative code: `latest(results)`.
+- Refetch: `refresh(results)`. In-flight indicator: `isPending(results)` (or
+  `isPending(() => results())`). Freshest in-flight value for a preview:
+  `latest(results)`. Do not start `fetch` at component-body top level.
 - Coordinate reveal order of sibling `<Loading>` boundaries with `<Reveal order="sequential" | "together" | "natural">`.
 
 **Never hand-roll these states.** No `[loading, setLoading]` signal, no
@@ -634,7 +639,10 @@ shared cache, no preload reuse, and no `revalidate`. Do not wrap mutations in
 `query` — wrapping an undeclared server function makes it GET. `query.get(key)`
 throws if there is no entry; `query.set` does not accept a promise. Cache is
 request-scoped on the server and application-scoped in the browser. After a
-router mutation, `revalidate(...)` — not core `refresh()`. Replace SolidStart /
+router mutation, `revalidate(...)` — not core `refresh()`, and not
+`reload()` (that is a *server-function return* that asks the integration to
+refresh cached data: `return reload({ revalidate: "todos" })`). `live()` sources
+update through the open stream; do not `revalidate` them. Replace SolidStart /
 Router 0.x leftovers: no `createAsync`, `useSubmission` (singular), `cache()`,
 router `json()`, or `<FileRoutes />` (`fileRoutes(pageRoutes)` instead).
 
@@ -656,7 +664,11 @@ revalidate: `redirect` / `reload` from `@solidjs/web` (see the server-function
 guides). For 404 during SSR: `httpStatus(404)` from `@solidjs/web`.
 `throw new Error("…")` is stripped to `"Internal Server Error"` in production —
 use `markSafeError` or `respond(..., { status })` for intentional client-facing
-failures. `GET()` is only for idempotent reads (URLs leak into logs/history);
+failures. Do not `return Response.json(...)` from `"use server"` — that is
+HTTP-handler control flow; `respond(value, { status })` is what a scripted
+caller unwraps. JSON-encodable arguments only unless `enableRichArguments()`
+was called once in the client entry (`Date` / `Map` / `Set` throw without it).
+`GET()` is only for idempotent reads (URLs leak into logs/history);
 import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
 `live()` yields **current state** (each yield replaces the last); do not treat
 it as an append-only event log, and hoist the memo so consumers share one
@@ -676,8 +688,12 @@ import { Title, Link, Meta } from '@solidjs/meta';
 ```
 
 Solid Meta 1.x has **no provider**. Render tags anywhere; later wins, unmount
-restores. `useHead` from `@solidjs/web` is the lower-level registry. Do not
-hardcode a second `<title>` in the document shell.
+restores. `useHead` from `@solidjs/web` is the lower-level registry — prefer
+`<Title>` / `<Meta>` / `<Script>` (JSON-LD) for application metadata. Several
+tags that should swap as one unit belong in `<Head>`. A static `<title>`
+in the document shell is the fallback when no `<Title>` is mounted; do not
+hardcode a second `<meta name="description">` (the registry leaves foreign tags
+alone, so both would coexist). Do not hardcode a second `<title>` in the document shell.
 
 ## These still run — write the other form
 
@@ -742,7 +758,7 @@ how to reuse. Prefer the form on the right.
 | `<For each={resolved()}>` after `children()` | `{resolved.toArray()}` — resolved children are not a reactive data list |
 | `<input onChange={...}>` for keystrokes | `onInput` — native `onChange` is blur/commit |
 | `createOptimistic` for a local edit draft | writable derivation / plain store. Optimistic is for an in-flight mutation |
-| `createMemo(async fn, { loadingValue })` as the default first-flight UI | `<Loading>` for first flight; `loadingValue` is an escape hatch |
+| `createMemo(async fn, { loadingValue })` / `{ seedLoadingValue: true }` as the default first-flight UI | `<Loading>` for first flight; those options are escape hatches (store projections use `seedLoadingValue`) |
 | `setSubmitted(true)` + an effect that watches it | do the work in the handler or an `action` |
 | `findUser(userId)` with the id from the client as identity | `getRequestEvent()!.locals.userId` |
 | `action={"/_server/" + id}` in app JSX | `action={createTodo.url}` or a router `action` |
@@ -753,6 +769,27 @@ how to reuse. Prefer the form on the right.
 | `{latest(() => results())}` as the visible list | settled read + `isPending()` for the indicator; `latest` is for previews |
 | `typeof window !== "undefined"` | `isServer` / `isDev` from `@solidjs/web` |
 | `Object.assign({}, props)` / expecting `merge` to skip `undefined` like 1.x `mergeProps` | `omit` / `merge` — explicit `undefined` **overrides** (Object.assign) |
+| `isPending(user())` / `latest(user())` | `isPending(user)` / `latest(user)` — pass the accessor (or `() => user()`). Calling it first evaluates the read before the helper runs |
+| `isPending(...)` as the first-load spinner | `<Loading>` owns first flight; `isPending` is the *refetch* indicator after a settled answer exists |
+| `refresh(getUser.key)` / `revalidate(user)` / `return refresh()` from `"use server"` | three APIs: core `refresh(source)` reruns a reactive source; router `revalidate(getUser.key)` invalidates the query cache; `return reload({ revalidate: "todos" })` asks the integration to refresh cached data |
+| `revalidate(liveSource)` | `live()` updates through the open stream; do not revalidate it |
+| `refresh(user)` without `affects` when the reload should look pending | pair `affects(user)` with `refresh(user)` — a bare `refresh` re-asks quietly |
+| `<Dynamic component={tab() ? A : B} />` | `const View = dynamic(() => (tab() ? A : B))` — `<Dynamic>` is a JSX convenience; app code should use `dynamic()` for stable identity |
+| `<meta name="description" content="...">` hardcoded in the document shell | `<Meta>` from `@solidjs/meta`. A static `<title>` is the fallback; other hardcoded tags coexist with the registry |
+| `useHead({ tag: "meta", ... })` for ordinary page tags | `<Title>` / `<Meta>` / `<Script>` (JSON-LD). `useHead` is the lower-level registry |
+| two `<Meta property="og:image">` meant as one replacement set | wrap them in `<Head>` — a later group replaces the earlier set as one unit |
+| `createRoot(() => ...)` inside a component | let `render` / the component owner own the scope. `createRoot` is for tests, libraries, and non-render entry points |
+| `JSON.stringify(store)` / `structuredClone(store)` | `snapshot(store)` — proxies throw or leak reactivity |
+| `import { env } from "virtual:env/client"` (or `import.meta.env`) for a signing secret | `import { env } from "virtual:env/server"` — client map values are public |
+| `renderToStream(...).pipe(res)` and also `.readable` / `await` on the same result | exactly one consumer: `pipe` / `pipeTo` / `readable` / await |
+| `return Response.json(user, { status: 201 })` from `"use server"` | `return respond(user, { status: 201 })` — scripted callers receive `user`, not a `Response` |
+| `<Portal>{user().name}</Portal>` for an async read | hoist the read above the portal (children start on the client); async UI inside one wants its own `<Loading>` |
+| a client history adapter to pick the SSR location | `<Router url={request.url}>` (or the request event). Client adapters do not select the server URL |
+| `fetch('/api')` at component-body top level | `createMemo(async () => { ... fetch ... })` under `<Loading>` — a top-level fetch runs once at mount and is not a reactive source |
+| `<input type="checkbox" value={on()} />` | `checked={on()}` for the toggle; `value="string"` only when grouping radios or listing submitted values |
+| `createMemo(() => { void save(); return x(); })` / an effect that calls an action | invoke actions from handlers, not from memos or effects |
+| `createSignal(props.value)` / `createStore(props.items)` | `createSignal(() => props.value)` / `createStore(() => props.items, fallback)` — a bare `props.x` at setup is a snapshot |
+| `createRenderEffect` / `createTrackedEffect` as the default effect | two-phase `createEffect(compute, apply)` |
 
 ```tsx
 // WRONG — post-await read never subscribes; production can hang pending
@@ -833,6 +870,16 @@ render(() => <App />, document.getElementById('app')!);
 ```
 
 ```tsx
+// WRONG — user() runs before isPending, so the helper never sees the accessor
+<article aria-busy={isPending(user())}>{user().name}</article>
+
+// CORRECT — pass the accessor (or () => user()); <Loading> still owns first flight
+<Loading fallback={<p>Loading…</p>}>
+  <article aria-busy={isPending(user) ? 'true' : 'false'}>{user().name}</article>
+</Loading>
+```
+
+```tsx
 // WRONG — tab() is read once at setup; View never changes
 const View = tab() ? Detailed : Compact;
 return <View value="now" />;
@@ -872,8 +919,10 @@ always-applied rules installed alongside this skill.
 - [ ] Effects are two-phase and only at imperative boundaries; apply does not read stores.
 - [ ] Async reads sit under `<Loading>` (the data slot, not chrome); errors under `<Errored>`.
       Reactive inputs of an async memo are read before the first `await`. No hand-rolled
-      `loading`/`error` signals or `=== undefined` readiness branches; refetch via
-      `refresh`, not counter signals.
+      `loading`/`error` signals or `=== undefined` readiness branches. First load is
+      `<Loading>`; refetch indicator is `isPending(user)` (the accessor, not `user()`).
+      Core `refresh(source)`, router `revalidate(key)`, and `return reload(...)` are
+      different APIs — do not mix them.
 - [ ] External collections reconcile into stores (function-form `createStore` /
       `reconcile`), never wholesale draft assignment or `setTodos((t) => t.filter(...))`
       as the identity-preserving update.
@@ -889,7 +938,9 @@ always-applied rules installed alongside this skill.
       `window.location`. Router `action`/`query` come from `@solidjs/router` (POST forms + cache), not
       core `action`/`refresh`. Forms: `<form action={save} method="post">`.
 - [ ] `render(() => <App />, root)` — a function, not `render(<App />)`. `hydrate` when
-      HTML already exists. Stream async/lazy trees (`await renderToStream(...)`).
+      HTML already exists. Stream async/lazy trees (`await renderToStream(...)`) with
+      exactly one consumer (`pipe` / `pipeTo` / `readable`). Snapshot stores with
+      `snapshot(store)`, not `JSON.stringify`. Secrets live in `virtual:env/server`.
 - [ ] `jsxImportSource` is `@solidjs/web`; Vite plugin is `@solidjs/vite-plugin`.
       No `@solidjs/start`, `vinxi`, `"use client"`, or Next.js imports.
 - [ ] Single return per component; no early returns on reactive conditions.

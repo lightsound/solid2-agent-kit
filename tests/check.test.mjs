@@ -59,6 +59,8 @@ const expected = [
   'next-nav',
   'react-dom-event',
   'history-nav',
+  'pending-accessor-call',
+  'dynamic-jsx',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {

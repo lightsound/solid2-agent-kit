@@ -25,6 +25,8 @@ export default function Broken() {
   notFound();
   hydrateRoot();
   typeof window;
+  isPending(user());
+  latest(data());
   history.pushState({}, '', '/');
   window.location.href = '/';
   const [count, setCount] = [0, (n: unknown) => n];
@@ -42,6 +44,7 @@ export default function Broken() {
         <A href="/" />
         <div className="box" use:model={1} on:click={noop} attr:title="x" onDoubleClick={noop} onKeyPress={noop} suppressHydrationWarning={true} />
         <button type="button" onClick={setCount}>n</button>
+        <Dynamic component={Page} />
         <Link href="/" />
       </MetaProvider>
     </HashRouter>

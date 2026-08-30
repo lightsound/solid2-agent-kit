@@ -78,10 +78,14 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     accessor) only when that identity change should show the fallback again. Pass an async
     memo to a child as the **accessor** (`user={user}`), and read `props.user()` under that
     child's `<Loading>` — `user={user()}` throws not-ready at the parent, so the child's
-    boundary never sees it. Do not `try/catch` `NotReadyError` around a read, and do not
+    boundary never sees it. Do not start `fetch` (or any request) at component-body top
+    level — that runs once at mount and is not a reactive source. Do not `try/catch` `NotReadyError` around a read, and do not
     use `loadingValue` / `seedLoadingValue` as the default first-flight UI — those skip
-    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer (`isPending`
-    is the indicator). "Prop with local edits" = writable derivation:
+    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer. `isPending`
+    is the *refetch* indicator after a settled answer exists — do not use it as the
+    first-load spinner (`<Loading>` owns that). Pass the accessor: `isPending(user)`,
+    not `isPending(user())` (that evaluates the read before `isPending` runs).
+    "Prop with local edits" = writable derivation:
     `createSignal(() => props.value)` or `createStore(() => props.value, fallback)`.
     `createOptimistic` is for an in-flight mutation, not a local editing session.
 11. Context: the context object is the provider — `<MyContext value={{ theme, setTheme }}>`
@@ -139,7 +143,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     counter/version signal read inside the computation. Input-driven refetch is automatic
     (tracked inputs re-run the computation) and subscriptions push. Legit uses: after a
     mutation inside an `action`, and explicit reload buttons. Pair with `affects(source)`
-    when the reload should present as pending.
+    when the reload should present as pending — a bare `refresh()` re-asks quietly.
+    These are three different APIs: core `refresh(source)` reruns a reactive source;
+    router `revalidate(getUser.key)` invalidates the query cache; server-function
+    `return reload({ revalidate: "todos" })` asks the integration to refresh cached
+    data. Do not mix them.
 20. **External collections flow into stores through reconciliation.** First choice:
     function-form `createStore(() => source, fallback)` / `createProjection` (reconcile
     automatically, keyed by `"id"`). Manual merge: `setStore(reconcile(fresh, "id"))` or
@@ -175,9 +183,13 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     fallback body), not event-time mutations. `JSON.stringify(store)`
     / `structuredClone(store)` without `snapshot(store)` can throw or leak proxies. Async SSR
     without `<Loading>` *works* but blocks the HTML shell until every read settles — wrap
-    reads, or stream with `renderToStream`.
-    Navigation-shaped updates (a setter, then async computeds holding previous values)
+    reads, or stream with `renderToStream`. `pipe` / `pipeTo` / `readable` each consume
+    a stream render — use exactly one. `createRoot` is for tests, libraries, and
+    non-render entry points; inside a component let `render` / the component owner
+    own the scope. Async reads inside `<Portal>` start on the client — hoist the
+    read above the portal. Navigation-shaped updates (a setter, then async computeds holding previous values)
     do not need core `action` — reach for it only when writes happen *after* async work.
+    Invoke actions from handlers, not from memos or effects.
 23. **Composition.** Pass `props.children` through when you only render them. Inspect or
     iterate children with `children(() => props.children)` (then `.toArray()`), never a
     setup-time snapshot. Code-split with `lazy(() => import("./X"))` under `<Loading>` —
@@ -199,8 +211,17 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `window.location` / `history.pushState`. Trusted identity is
     `getRequestEvent()`, never a caller-supplied user id. Unscripted forms use
     the function `.url` (or a router `action`), not a hand-built `/_server/`
-    path. Document head is
-    `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`.
+    path. Client history adapters do not select the SSR URL — pass
+    `<Router url={request.url}>` (or rely on the request event). Secrets belong in
+    `virtual:env/server`, never the `client` env map / `import.meta.env`. Document head is
+    `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`. A static
+    `<title>` in the document shell is the fallback; do not hardcode other tags
+    (`<meta name="description">`) that Solid Meta should manage.
+    Return `respond(value, { status })` from a `"use server"` function, not
+    `Response.json` — a raw `Response` is HTTP-handler control flow; scripted
+    callers should receive the value. JSON-encodable server-function arguments
+    only, unless `enableRichArguments()` was called once in the client entry
+    (`Date` / `Map` / `Set` throw without it).
 
 ## Lint heritage: eslint-plugin-solid (Solid 1.x) intents carried into this file
 
@@ -264,6 +285,7 @@ When unsure about any API, verify against the official Solid 2.0 docs — fetcha
 listed in `references/official-docs.md` next to the `solid-2` skill. Do not guess from
 Solid 1.x or React memory.
 
-`createTrackedEffect` and `storePath` exist in Solid 2 but are not defaults: use two-phase
-`createEffect` unless a single tracked callback is required, and draft setters instead of
-`storePath` except while converting 1.x path setters.
+`createTrackedEffect`, `createRenderEffect`, and `storePath` exist in Solid 2 but
+are not defaults: use two-phase `createEffect` unless a single tracked callback is
+required, and draft setters instead of `storePath` except while converting 1.x
+path setters.
