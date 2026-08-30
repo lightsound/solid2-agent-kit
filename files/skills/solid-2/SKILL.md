@@ -846,4 +846,5 @@ always-applied rules installed alongside this skill.
 - [ ] `jsxImportSource` is `@solidjs/web`; Vite plugin is `@solidjs/vite-plugin`.
       No `@solidjs/start`, `vinxi`, `"use client"`, or Next.js imports.
 - [ ] Single return per component; no early returns on reactive conditions.
-- [ ] `solid2-kit check` and the project's typecheck pass.
+- [ ] `solid2-kit check` and the project's typecheck pass; `solid2-kit doctor` too if
+      `package.json`, tsconfig, or root config files changed.

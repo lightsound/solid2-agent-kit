@@ -1,0 +1,7 @@
+{
+  // JSONC comment: doctor must parse this file without JSON.parse.
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "solid-js"
+  }
+}
