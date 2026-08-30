@@ -1,0 +1,55 @@
+# main 上で package.json の version が変わった(= npm 未公開の version になった)ときだけ
+# npm へ自動公開する。認証は npm Trusted Publishing (OIDC) を使うためトークンは一切不要。
+# 注意: setup-node の registry-url は指定しない。.npmrc に _authToken 行が書かれて
+# OIDC が ENEEDAUTH で壊れるため (npm/documentation#1960)。
+name: publish
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+  # Trusted Publisher 設定後、version bump を待たずに手動で公開を試せるようにしておく
+  workflow_dispatch:
+
+permissions:
+  id-token: write # npm Trusted Publishing (OIDC) に必須
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Trusted Publishing には npm 11.5.1 以上が必要
+      - name: Ensure npm >= 11.5.1
+        run: |
+          npm install -g npm@latest
+          npm --version
+
+      - name: Skip if this version is already on npm
+        id: version
+        run: |
+          LOCAL="$(node -p "require('./package.json').version")"
+          PUBLISHED="$(npm view "solid2-agent-kit@${LOCAL}" version 2>/dev/null || true)"
+          if [ "$PUBLISHED" = "$LOCAL" ]; then
+            echo "::notice::solid2-agent-kit@${LOCAL} is already on npm — skipping publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "solid2-agent-kit@${LOCAL} is not on npm yet — will publish."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 依存もロックファイルもないので npm ci はしない
+      - name: Run tests
+        if: steps.version.outputs.publish == 'true'
+        run: npm test
+
+      - name: Publish to npm (Trusted Publishing / OIDC)
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public

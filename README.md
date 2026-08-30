@@ -24,8 +24,8 @@ on sync.
 
 ## Usage
 
-GitHub is the canonical distribution channel (the kit is intentionally not published to
-npm; consumers pin a commit through their lockfile):
+GitHub is the canonical distribution channel (consumers pin a commit through their
+lockfile); the package is also published to npm as `solid2-agent-kit`:
 
 ```sh
 # install guidance for both Cursor and Claude Code (default)
@@ -55,8 +55,8 @@ resolve the project-local bin, so the bare name is safe there):
 ```
 
 Update later with `bun update solid2-agent-kit` (or the npm/pnpm equivalent) followed by
-`npx solid2-agent-kit sync`. Outside a project that has the kit installed, always use the
-`npx github:...` form — the bare package name is not claimed on the npm registry.
+`npx solid2-agent-kit sync`. Outside a project that has the kit installed, prefer the
+`npx github:...` form — it always tracks this repo directly.
 
 ## Why not eslint-plugin-solid?
 
@@ -95,6 +95,14 @@ files/skills/solid-2/              SKILL.md + references/official-docs.md
 scripts/check-docs-drift.mjs       weekly docs cross-check
 tests/                             mechanical-gate fixtures (`npm test`)
 ```
+
+## Publishing (npm)
+
+Bump `version` in `package.json` on `main` and CI publishes automatically
+(`.github/workflows/publish.yml`) — it skips when the version already exists on npm.
+Auth is npm Trusted Publishing (OIDC), so no NPM_TOKEN secret exists or is needed.
+One-time setup on npm: package → Settings → Trusted Publisher → GitHub Actions, owner
+`lightsound`, repo `solid2-agent-kit`, workflow `publish.yml`, environment left empty.
 
 ## License
 
