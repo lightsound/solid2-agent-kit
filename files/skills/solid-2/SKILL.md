@@ -114,7 +114,8 @@ To merge defaults or split props reactively use `merge` / `omit` from `solid-js`
 `Object.assign`: an explicit `undefined` **overrides** the previous source.
 Omitted keys still fall through, so `merge({ type: "button" }, props)` is the
 usual defaults pattern. That is not Solid 1 `mergeProps`, which ignored
-`undefined`.
+`undefined`. Forwarding leftover props: `const rest = omit(props, "label")` then
+`<input {...rest} />`. `const rest = { ...props }` compiles and then never updates.
 
 ### Store updates (draft mutation)
 
@@ -211,7 +212,8 @@ createEffect(
 ```
 
 Reads inside `apply` do not track. Extract every needed reactive value in `compute`
-(e.g. `() => ({ name: user.name, role: user.role })`). Compute-phase errors can be
+(e.g. `() => ({ name: user.name, role: user.role })`). Passing a store proxy into `apply`
+and reading `user.name` there *runs once* and never retriggers. Compute-phase errors can be
 intercepted with the bundle form `createEffect(compute, { effect, error })`.
 
 ### Async data
@@ -236,8 +238,14 @@ return (
 ```
 
 - The `<Loading>` boundary must be an owner ancestor of the **read** (`results()`), not of
-  where the memo was created. Boundary placement is purely a UX decision — it does not
-  change when fetches start (no waterfalls: nested components set up and fetch in parallel).
+  where the memo was created, and not of page chrome (header/nav) that should stay mounted.
+  Boundary placement is purely a UX decision — it does not change when fetches start
+  (no waterfalls: nested components set up and fetch in parallel). After first paint the
+  boundary keeps settled content during refetch; `isPending(() => results())` is the
+  indicator. Use `on={query()}` (the **value**, not the accessor `on={query}`) only when
+  that identity should put the fallback back on screen.
+- Read every reactive input **before the first `await`** in an async computation. A read
+  after `await` does not subscribe; production can sit pending with no retry.
 - `<Errored>` function fallbacks receive an error **accessor** and a `reset` callback:
   `fallback={(error, reset) => ...}`.
 - Refetch: `refresh(results)`. In-flight indicator: `isPending(() => results())`.
@@ -311,6 +319,10 @@ const addTodo = action(function* (todo: Todo) {
 Ordinary signal/store writes inside an action are held until it settles. Never call
 `flush()` inside an action. Invoke actions from handlers, not from component/computation bodies.
 
+**`yield`, not a bare `await`, is the transaction boundary.** `await api.save()` then
+`setTodos(...)` *runs*, but the write commits immediately and optimistic rollback is lost.
+Either `yield saveTodo(todo)` or, when you need a typed result, `const saved = await api.save(); yield; setTodos(...)`.
+
 ### Lists: `<For>` child signatures per keying mode
 
 ```tsx
@@ -331,6 +343,10 @@ Choosing the keying mode:
 | Server/refetched data — fetch results, subscription payloads (fresh object references on every update) | **key function on a stable id** (`keyed={(item) => item.id}`) — reference keying would recreate every row on each update |
 | Local array whose item identities are stable (e.g. store rows, static lists) | default (item reference) |
 | Fixed positions where only contents change | `keyed={false}` |
+
+Never `{todos().map((t) => <Row todo={t} />)}` and never `<For each={todos().map(...)}>`.
+The `.map` form *renders*; it just rebuilds every row. `children().toArray().map` is
+fine — those nodes are already resolved.
 
 `<Repeat from={start()} count={20}>{(index) => ...}</Repeat>` renders by absolute index with
 no array diffing — use for fixed slot counts and virtual scrolling windows.
@@ -570,6 +586,60 @@ Solid Meta 1.x has **no provider**. Render tags anywhere; later wins, unmount
 restores. `useHead` from `@solidjs/web` is the lower-level registry. Do not
 hardcode a second `<title>` in the document shell.
 
+## These still run — write the other form
+
+Official docs (and the compiler) allow several of these. They are the wrong
+tool: they snapshot, drop subscriptions, or rebuild work Solid already knows
+how to reuse. Prefer the form on the right.
+
+| Compiles / renders | Write this |
+|---|---|
+| `{todos().map((t) => <Row todo={t} />)}` | `<For each={todos()} keyed={(t) => t.id}>` |
+| `<For each={todos().map(t => t)}>` | derive first, then `<For each={visible()}>` |
+| `class={`btn ${on() ? "on" : ""}`}` | `class={["btn", { on: on() }]}` |
+| `style={{ width: 80 }}` (no unit) | `style={{ width: `${80}px` }}` |
+| `const rest = { ...props }` | `const rest = omit(props, "label")` |
+| `const user = createMemo(async () => { await fetch(...); return id(); })` | read `id()` **before** `await` |
+| `action(async function* () { await save(); setX(v); })` | `yield save()` or `await save(); yield; setX(v)` |
+| `todos()` on a store | `todos.length` / `todo.title` (property reads) |
+| `setTodos((t) => t.filter((x) => x.ok))` | mutate the draft, or `reconcile` |
+| `createEffect(() => user, (u) => log(u.name))` | `createEffect(() => user.name, (name) => log(name))` |
+| `<Loading fallback={<PageSkeleton />}>{/* header + data */}</Loading>` | wrap only the data slot; chrome stays outside |
+| `<Loading on={id} fallback={...}>` (the accessor) | `on={id()}` — a value, so identity changes can show fallback |
+| `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
+| `setHandler(fn)` to store a function | `setHandler(() => fn)` (otherwise `fn` is an updater) |
+| `{user() ? <P user={user()!} /> : <SignIn />}` | `<Show when={user()}>{(u) => <P user={u()} />}</Show>` |
+
+```tsx
+// WRONG — post-await read never subscribes; production can hang pending
+const user = createMemo(async () => {
+  const response = await fetch('/api/me');
+  const extra = flag(); // too late
+  return { ...(await response.json()), extra };
+});
+
+// CORRECT
+const user = createMemo(async () => {
+  const extra = flag();
+  const response = await fetch('/api/me');
+  return { ...(await response.json()), extra };
+});
+```
+
+```tsx
+// WRONG — rest is a plain object snapshot
+function Field(props: { label: string; class?: string }) {
+  const rest = { ...props };
+  return <label>{props.label}<input {...rest} /></label>;
+}
+
+// CORRECT
+function Field(props: { label: string; class?: string }) {
+  const rest = omit(props, 'label');
+  return <label>{props.label}<input {...rest} /></label>;
+}
+```
+
 ## Checking the official docs
 
 Solid 2.0 docs: https://v2.solidjs.com/ — the site blocks non-browser fetchers, so from an
@@ -593,13 +663,16 @@ always-applied rules installed alongside this skill.
 - [ ] No signal-synced-by-effect; derived values are functions or memos.
 - [ ] `class` / CSS-name `style` / `onInput` — no `className`, `backgroundColor`, per-keystroke `onChange`.
 - [ ] Lists via `<For>` (server/refetched rows keyed by stable id), conditionals via
-      ternary/`<Show>`; no `key` props; no `value()!` hand-narrowing.
-- [ ] Effects are two-phase and only at imperative boundaries.
-- [ ] Async reads sit under `<Loading>`; errors under `<Errored>`. No hand-rolled
+      ternary/`<Show>`; no `{list().map(...)}` in JSX; no `key` props; no `value()!`.
+- [ ] Effects are two-phase and only at imperative boundaries; apply does not read stores.
+- [ ] Async reads sit under `<Loading>` (the data slot, not chrome); errors under `<Errored>`.
+      Reactive inputs of an async memo are read before the first `await`. No hand-rolled
       `loading`/`error` signals or `=== undefined` readiness branches; refetch via
       `refresh`, not counter signals.
 - [ ] External collections reconcile into stores (function-form `createStore` /
-      `reconcile`), never wholesale draft assignment.
+      `reconcile`), never wholesale draft assignment or `setTodos((t) => t.filter(...))`
+      as the identity-preserving update.
+- [ ] Rest props via `omit`, not `{ ...props }`. Conditional `class` via objects, not string concat.
 - [ ] Input filters write back to the DOM on reject (inputs do not rewind).
 - [ ] No Solid 1.x imports or APIs (`solid-js/store`, `createResource`, `onMount`, `Suspense`, ...).
 - [ ] Inspect children with `children()`; code-split with `lazy` + `<Loading>`; reactive

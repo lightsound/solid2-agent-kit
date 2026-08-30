@@ -212,6 +212,26 @@ const CHECKS = [
     message: 'React `key` prop has no meaning in Solid. Row identity belongs on <For keyed={...}>.',
   },
   {
+    // `{todos().map((t) => <Row />)}` renders then recreates every row.
+    // `children().toArray().map` does not match (method is toArray, not a bare accessor).
+    id: 'jsx-accessor-map',
+    pattern: /\{\s*[A-Za-z_$][\w$]*\(\)\.map\s*\(/g,
+    message:
+      '`.map()` over a reactive accessor in JSX recreates every row. Use <For each={...}> (and a key function for server/refetched rows).',
+  },
+  {
+    id: 'for-each-map',
+    pattern: /\beach=\{\s*[^}]*\.map\s*\(/g,
+    message:
+      '<For each={list().map(...)}> still rebuilds the array every run. Derive the list first, then pass that list to each={...}.',
+  },
+  {
+    id: 'props-rest-copy',
+    pattern: /=\s*\{\s*\.\.\.\s*props\b/g,
+    message:
+      '`{ ...props }` is a snapshot. Forward leftover props with omit(props, "key") (a reactive proxy), then JSX-spread that.',
+  },
+  {
     // A non-null assertion on a zero-arg call is almost always a reactive read
     // narrowed by hand (`error()!.message`). Common zero-arg stdlib methods
     // that legitimately pair with `!` are excluded.

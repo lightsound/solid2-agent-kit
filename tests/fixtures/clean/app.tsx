@@ -3,6 +3,7 @@ import {
   createUniqueId,
   lazy,
   Loading,
+  omit,
   onSettled,
   type ParentProps,
 } from 'solid-js';
@@ -31,11 +32,12 @@ function listen(type: string, handler: EventListener) {
   };
 }
 
-function Stack(props: ParentProps) {
+function Stack(props: ParentProps<{ title?: string }>) {
   const resolved = children(() => props.children);
+  const rest = omit(props, 'title');
   const id = createUniqueId();
   return (
-    <section id={id} class={['stack', { ready: true }]}>
+    <section {...rest} id={id} class={['stack', { ready: true }]}>
       <Title>Home</Title>
       {resolved.toArray()}
     </section>

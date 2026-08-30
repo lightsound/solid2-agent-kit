@@ -23,3 +23,17 @@ export default function Broken() {
 }
 
 function noop() {}
+
+function Mapped(props: { label: string }) {
+  const rest = { ...props };
+  const items = () => ['a', 'b'];
+  return (
+    <ul>
+      {items().map((x) => (
+        <li>{x}</li>
+      ))}
+      <For each={items().map((x) => x)}>{(x) => <li>{x}</li>}</For>
+      <input {...rest} />
+    </ul>
+  );
+}
