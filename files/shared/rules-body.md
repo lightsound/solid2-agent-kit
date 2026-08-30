@@ -15,7 +15,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 1. **Never destructure props.** `function C({ name })` and `const { name } = props` read the
    prop getter once at setup and kill reactivity. Keep `props.x` and read it inside JSX, a
    memo, or an effect compute function. Defaults go at the read site: `props.x ?? fallback`.
-   Rule of thumb: the string `props.` must never appear at component-body top level.
+   Rest props: `omit(props, "label", "value")`, never `const rest = { ...props }` (a snapshot).
+   JSX `{...rest}` is fine once `rest` is a reactive proxy. Rule of thumb: the string `props.`
+   must never appear at component-body top level *as a read* (`const x = props.x`); nested
+   functions (`() => props.x`, `omit(props, ...)`, `children(() => props.children)`) are fine.
    Mechanically enforced by `solid2-kit check` — run it after editing TSX.
 2. **Never read reactive values at component-body top level.** The body runs once, untracked;
    `const v = count()` there is a frozen snapshot (Solid warns in dev). Carry the accessor
@@ -23,32 +26,49 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 3. Signals are read by **calling** them: `{count()}` in JSX, not `{count}`.
 4. **Derived state is a function, not state + effect.** `const full = () => a() + b()`.
    Never write "a signal plus an effect that syncs it". Use `createMemo` only for expensive
-   computations, multiple consumers, or an equality boundary.
+   computations, multiple consumers, or an equality boundary. When several writes can land
+   before a flush, use the setter updater (`setCount((c) => c + 1)`); `setCount(count() + 1)`
+   reads the last *committed* value and drops the other staged writes. To store a *function*
+   in a signal, wrap it: `setHandler(() => myHandler)` — `setHandler(myHandler)` treats it
+   as an updater.
 5. `class`, not `className`; `for`, not `htmlFor`. `class` accepts strings, conditional
-   objects, and nested arrays: `class={["btn", { active: selected() }]}`. `style` objects use
-   CSS property names (`"background-color"`, not `backgroundColor`) and numbers do NOT
-   auto-append `px`.
+    objects, and nested arrays: `class={["btn", { active: selected() }]}`. Put *conditional*
+    names in an object — `class={`btn ${on() ? "on" : ""}`}` works but rebuilds the whole
+    string, so Solid cannot add/remove one token. `style` objects use CSS property names
+    (`"background-color"`, not `backgroundColor`) and numbers do NOT auto-append `px`
+    (`width: `${n}px``).
 6. **`onInput` for per-keystroke handling.** Solid's `onChange` is the native change event
-   (fires on blur/commit), not React's per-keystroke `onChange`. Handlers receive native DOM
-   events and run untracked — reading a signal inside a handler always gives the current
-   value (stale closures cannot happen; `useCallback` equivalents are unnecessary).
-7. **Lists use `<For>`**, never bare `.map()` in reactive JSX and never `key` props.
-   Row identity: default = item reference; `keyed={(item) => item.id}` = key function
-   (child receives item as an accessor); `keyed={false}` = positional. **Rows from
-   server/refetched data (fresh object references on every update — fetch results,
-   subscription payloads) must use a key function on a stable id**, or every update
-   recreates every row. Reference keying is for local arrays whose item identities are
-   stable (e.g. store rows). Fixed-count / windowed rendering uses `<Repeat>`.
+    (fires on blur/commit), not React's per-keystroke `onChange`. Handlers receive native DOM
+    events and run untracked — reading a signal inside a handler always gives the current
+    value (stale closures cannot happen; `useCallback` equivalents are unnecessary).
+    Checkboxes/radios use `checked={...}`, not `value`.
+7. **Lists use `<For>`**, never `{list().map(...)}` in reactive JSX and never `key` props.
+    `{todos().map((t) => <Row todo={t} />)}` *renders*, then recreates every row on each
+    update. Row identity: default = item reference; `keyed={(item) => item.id}` = key function
+    (child receives item as an accessor); `keyed={false}` = positional. **Rows from
+    server/refetched data (fresh object references on every update — fetch results,
+    subscription payloads) must use a key function on a stable id**, or every update
+    recreates every row. Reference keying is for local arrays whose item identities are
+    stable (e.g. store rows). Fixed-count / windowed rendering uses `<Repeat>`.
+    Never `<For each={list().map(...)}>`.
 8. **Effects have two phases**: `createEffect(compute, apply)`. All reactive reads go in
     `compute`; its return value feeds `apply`, which does imperative work and may return a
     cleanup. Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
     `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest
     primitives. Most React `useEffect` code should not become an effect at all — see the skill.
 9. **Stores update by mutating a draft**: `setStore(draft => { draft.user.name = "Ada" })`.
-   Never rebuild with spreads — that destroys property-level subscriptions.
+   Never rebuild with spreads — that destroys property-level subscriptions. Returning a new
+   array from the setter (`setTodos((t) => t.filter(...))`) *renders* but is unkeyed — same
+   identity loss as wholesale assignment; mutate the draft or `reconcile`. Stores are
+   **property reads** (`todos.length`, `todo.title`), not accessors — never `todos()`.
 10. **Async data is an async computation**: `createMemo(async () => ...)` read under
-    `<Loading>` / `<Errored>` boundaries. No `useEffect` + `setState` fetching, no
-    `createResource`. "Prop with local edits" = writable derivation:
+    `<Loading>` / `<Errored>` boundaries. Read every reactive input **before the first
+    `await`** — post-`await` reads do not subscribe, and in production the computation can
+    sit pending with no retry. No `useEffect` + `setState` fetching, no `createResource`.
+    `<Loading>` wraps the data slot, not page chrome. After first paint it keeps content
+    during refetch (`isPending` for the indicator). Use `on={id()}` (the *value*, not the
+    accessor) only when that identity change should show the fallback again. "Prop with
+    local edits" = writable derivation:
     `createSignal(() => props.value)` or `createStore(() => props.value, fallback)`.
 11. Context: the context object is the provider — `<MyContext value={{ theme, setTheme }}>`
     (no `.Provider`). Pass accessors/setters/stores through context, never snapshot values.
@@ -134,7 +154,7 @@ directory (default `src/`).
 | `solid/components-return-once` | still valid | rule 15 |
 | `solid/no-react-specific-props` | still valid | rule 5 + `solid2-kit check` |
 | `solid/no-react-deps` | still valid — never pass React-style dependency arrays | rule 8 + `solid2-kit check` react-hook check |
-| `solid/prefer-for` | still valid | rule 7 |
+| `solid/prefer-for` | still valid — `{list().map}` still renders | rule 7 + `solid2-kit check` |
 | `solid/prefer-show` | now a recommended default when narrowing | rule 17 + `solid2-kit check` |
 | `solid/no-innerhtml` | still valid | rule 16 |
 | `solid/style-prop` | still valid | rule 5 + `solid2-kit check` |

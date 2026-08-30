@@ -43,6 +43,9 @@ const expected = [
   'solid1-router',
   'meta-provider',
   'vite-plugin-solid',
+  'jsx-accessor-map',
+  'for-each-map',
+  'props-rest-copy',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {

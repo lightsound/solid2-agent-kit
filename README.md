@@ -14,9 +14,9 @@ Supported agents: **Cursor** and **Claude Code**.
 | Layer | Cursor | Claude Code | Role |
 |---|---|---|---|
 | Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 23 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
-| Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables (state placement, effect-or-not, composition/SSR), canonical patterns verified against official docs, review checklist, official-doc URL index (core + optional router / server functions / meta) |
+| Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables, canonical patterns, a “still runs / write the other form” table, review checklist, official-doc URL index |
 | Shared agent context | managed block in `AGENTS.md` | same (Claude Code users can reference it from `CLAUDE.md`) | Core principles and pointers, always in context |
-| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}`: fails on props destructuring (including multi-line signatures), React imports/hooks/JSX props/`React.lazy`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<HashRouter>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, and `=== undefined` readiness branches |
+| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}`: fails on props destructuring (including multi-line signatures), `{ ...props }` rest copies, `{list().map(...)}` in JSX, React imports/hooks/JSX props/`React.lazy`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<HashRouter>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, and `=== undefined` readiness branches |
 
 Managed blocks are delimited with `<!-- solid2-agent-kit:*:start/end -->` markers; everything
 outside them is yours. Kit-owned files (`solid-2.mdc`, the skill directories) are overwritten
