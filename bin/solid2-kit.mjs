@@ -177,7 +177,7 @@ const CHECKS = [
   {
     id: 'react-hook',
     pattern:
-      /(?<![.\w])use(?:State|Effect|Memo|Ref|Callback|Reducer|LayoutEffect|Transition|SyncExternalStore|ImperativeHandle)\s*\(/g,
+      /(?<![.\w])use(?:State|Effect|Memo|Ref|Callback|Reducer|LayoutEffect|Transition|SyncExternalStore|ImperativeHandle|Id|DeferredValue|InsertionEffect)\s*\(/g,
     message: 'React hook. See the primitive mapping in the solid-2 rules.',
   },
   {
@@ -250,6 +250,23 @@ const CHECKS = [
     id: 'react-lazy',
     pattern: /\bReact\.lazy\s*\(/g,
     message: 'React.lazy. Use `lazy(() => import("./X"))` from "solid-js" and read it under <Loading>.',
+  },
+  {
+    id: 'lazy-then-wrapper',
+    pattern: /\blazy\(\s*\(\)[\s\S]{0,160}?\.then\s*\(/g,
+    message:
+      'lazy().then((m) => ({ default: m.X })) breaks hydration. Pass { export: "X" } as the second argument: lazy(() => import("./mod"), { export: "X" }).',
+  },
+  {
+    id: 'dangerously-set-inner-html',
+    pattern: /\bdangerouslySetInnerHTML=/g,
+    message: 'React innerHTML prop. Use innerHTML={sanitizedHtml()} from Solid, never combined with JSX children.',
+  },
+  {
+    id: 'setter-as-handler',
+    pattern: /\bon[A-Z][A-Za-z]*=\{\s*set[A-Z]\w*\s*\}/g,
+    message:
+      'Passing a setter as an event handler writes the event object. Wrap it: onClick={() => setCount((c) => c + 1)}.',
   },
   {
     id: 'vite-plugin-solid',

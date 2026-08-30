@@ -41,7 +41,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     (fires on blur/commit), not React's per-keystroke `onChange`. Handlers receive native DOM
     events and run untracked — reading a signal inside a handler always gives the current
     value (stale closures cannot happen; `useCallback` equivalents are unnecessary).
-    Checkboxes/radios use `checked={...}`, not `value`.
+    Checkboxes/radios use `checked={...}`, not `value`. Read fields with
+    `event.currentTarget` (the element that owns the handler), not `event.target`
+    (a nested child). Never pass a setter as the handler (`onClick={setCount}`) —
+    that writes the event object; wrap it: `onClick={() => setCount((c) => c + 1)}`.
 7. **Lists use `<For>`**, never `{list().map(...)}` in reactive JSX and never `key` props.
     `{todos().map((t) => <Row todo={t} />)}` *renders*, then recreates every row on each
     update. Row identity: default = item reference; `keyed={(item) => item.id}` = key function
@@ -49,8 +52,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     server/refetched data (fresh object references on every update — fetch results,
     subscription payloads) must use a key function on a stable id**, or every update
     recreates every row. Reference keying is for local arrays whose item identities are
-    stable (e.g. store rows). Fixed-count / windowed rendering uses `<Repeat>`.
-    Never `<For each={list().map(...)}>`.
+    stable (e.g. store rows). Match the child signature to the mode: default item is the
+    **raw** value (`todo.title`); `keyed={(t) => t.id}` / `keyed={false}` pass an
+    **accessor** (`todo().title`). Mixing those still “runs” (you render a function, or
+    throw). Empty lists: `fallback` on `<For>`, not a `.length` branch around it.
+    Sliding windows: `<Repeat from={from()} count={n}>`, not `list.slice(from, from+n)`
+    fed to `<For>` (that rebuilds the window array every time).
 8. **Effects have two phases**: `createEffect(compute, apply)`. All reactive reads go in
     `compute`; its return value feeds `apply`, which does imperative work and may return a
     cleanup. Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
@@ -67,12 +74,17 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     sit pending with no retry. No `useEffect` + `setState` fetching, no `createResource`.
     `<Loading>` wraps the data slot, not page chrome. After first paint it keeps content
     during refetch (`isPending` for the indicator). Use `on={id()}` (the *value*, not the
-    accessor) only when that identity change should show the fallback again. "Prop with
-    local edits" = writable derivation:
+    accessor) only when that identity change should show the fallback again. Pass an async
+    memo to a child as the **accessor** (`user={user}`), and read `props.user()` under that
+    child's `<Loading>` — `user={user()}` throws not-ready at the parent, so the child's
+    boundary never sees it. "Prop with local edits" = writable derivation:
     `createSignal(() => props.value)` or `createStore(() => props.value, fallback)`.
 11. Context: the context object is the provider — `<MyContext value={{ theme, setTheme }}>`
     (no `.Provider`). Pass accessors/setters/stores through context, never snapshot values.
-    `createContext<T>()` without a default throws when read outside a provider (good).
+    `createContext<T>()` without a default throws when read outside a provider (good) — use
+    that for any reactive payload. `createContext("light")` is only for a primitive static
+    fallback; a dummy default on a store/signal context *runs* and then silently no-ops
+    without a provider.
 12. Refs: `let el!: HTMLDivElement` + `ref={el}` or `ref={(node) => (el = node)}`, or forward
     `props.ref`. Compose with arrays: `ref={[props.ref, (node) => (el = node)]}`. No
     `useRef`/`.current`. Ref callbacks run untracked and **without an owner**; their
@@ -91,7 +103,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     JSX (`<Show>`, ternary, `<Switch>`/`<Match>`). Early returns on genuinely non-reactive
     values (build-time config, missing env) are fine.
 16. Prefer `textContent` for text-only content. Use `innerHTML` only for trusted or
-    sanitized markup — never interpolate user input into it.
+    sanitized markup — never interpolate user input into it, never React's
+    `dangerouslySetInnerHTML`, and never combine `innerHTML` with JSX children (they fight
+    over the same contents).
 17. **Never narrow a reactive read with a non-null assertion** (`error()!.message`,
     `user()!`). Use `<Show when={value()}>` with a function child — it passes a
     **narrowed accessor**, so no `!` is needed:
@@ -129,12 +143,17 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`). Server vs browser:
     `isServer` / `isDev` from `@solidjs/web`, or `clientOnly(() => import("./Widget"))` for
-    browser-only components — never `typeof window` as the SSR boundary.
+    browser-only components — never `typeof window` as the SSR boundary. `JSON.stringify(store)`
+    / `structuredClone(store)` without `snapshot(store)` can throw or leak proxies. Async SSR
+    without `<Loading>` *works* but blocks the HTML shell until every read settles — wrap
+    reads, or stream with `renderToStream`.
 23. **Composition.** Pass `props.children` through when you only render them. Inspect or
     iterate children with `children(() => props.children)` (then `.toArray()`), never a
     setup-time snapshot. Code-split with `lazy(() => import("./X"))` under `<Loading>` —
-    not `React.lazy` / `<Suspense>`. Named exports: `lazy(() => import("./pages"), { export: "About" })`.
-    Select a component from reactive state with `dynamic(() => ...)` from `@solidjs/web`
+    not `React.lazy` / `<Suspense>`. Named exports: `lazy(() => import("./pages"), { export: "About" })`
+    — `lazy(() => import("./pages").then((m) => ({ default: m.About })))` hydrates wrong
+    because the named export is not a call-site literal. Select a component from reactive
+    state with `dynamic(() => ...)` from `@solidjs/web`
     (stable identity). If the project has `@solidjs/router`, routes are `createRouter({ routes })`
     at module scope — not JSX `<Route>` / `<A>` / `<HashRouter>`. Document head is
     `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`.

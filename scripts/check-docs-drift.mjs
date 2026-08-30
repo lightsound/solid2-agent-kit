@@ -65,6 +65,10 @@ const REQUIRED_APIS = [
   'useParams',
   'redirect',
   'reload',
+  'respond',
+  'markSafeError',
+  'GET',
+  'live',
 ];
 
 // Solid 1.x names that appear in kit content only as banned examples.
