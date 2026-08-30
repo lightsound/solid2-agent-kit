@@ -351,6 +351,20 @@ const CHECKS = [
     message:
       'Readiness branch on a zero-arg call. Read async values under <Loading> (first load) / isPending() (refetch) and let errors reach <Errored>. For non-reactive utils, assign to a variable and test that.',
   },
+  {
+    // `isPending(user())` / `latest(data())` evaluate the read before the
+    // helper runs. `isPending(user)` and `isPending(() => user())` do not match.
+    id: 'pending-accessor-call',
+    pattern: /(?<![.\w])(?:isPending|latest)\(\s*[A-Za-z_$][\w$]*\(\s*\)/g,
+    message:
+      'Pass the accessor to isPending/latest, not the call: isPending(user), not isPending(user()). Calling it first evaluates the read before the helper runs.',
+  },
+  {
+    id: 'dynamic-jsx',
+    pattern: /<Dynamic[\s/>]/g,
+    message:
+      '`<Dynamic>` is a JSX convenience wrapper. Application code should use dynamic(() => ...) from "@solidjs/web" so the component identity stays stable.',
+  },
 ];
 
 // .ts / .tsx sources, excluding .d.ts declaration files.
