@@ -68,7 +68,7 @@ Most React `useEffect` code should NOT become `createEffect`:
 | Code-split a component | `lazy(() => import("./X"))` read under `<Loading>` |
 | Named export from a lazy module | `lazy(() => import("./pages"), { export: "About" })` |
 | Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity) |
-| Browser-only widget (charts, maps, `window`) | `clientOnly(() => import("./Chart"))` from `@solidjs/web` |
+| Browser-only widget (charts, maps, `window`) | `clientOnly(() => import("./Chart"))` from `@solidjs/web` (`{ lazy: true }` defers the import until first render) |
 | Server vs browser branch | `isServer` / `isDev` from `@solidjs/web` (build-time constants), not `typeof window` |
 | SSR-stable `id` / `for` / `aria-*` pairing | `createUniqueId()` |
 
@@ -325,6 +325,12 @@ Ordinary signal/store writes inside an action are held until it settles. Never c
 `setTodos(...)` *runs*, but the write commits immediately and optimistic rollback is lost.
 Either `yield saveTodo(todo)` or, when you need a typed result, `const saved = await api.save(); yield; setTodos(...)`.
 
+Navigation-shaped updates do **not** need core `action`. A plain setter is enough:
+reads pull the async, and downstream async computeds hold previous values until the
+new ones are ready (`isPending` / `latest`). Reach for `action` from `solid-js` only
+when writes happen *after* async work. Router form `action` from `@solidjs/router` is
+a different API (URL + POST) — see [App stack](#app-stack-only-if-the-project-has-these-packages).
+
 ### Lists: `<For>` child signatures per keying mode
 
 ```tsx
@@ -380,7 +386,8 @@ Plain ternaries remain fine when no narrowing is involved (`{open() ? <A /> : <B
 Default `Show` keeps children mounted across truthy changes. Add `keyed` to remount when the
 value's identity changes (child then receives the raw value, like React's `key` reset).
 Prefer the default; use `keyed` only when internal state must reset. Multi-branch:
-`<Switch>` / `<Match>`.
+`<Switch>` / `<Match>` — **first truthy `<Match>` wins**; later matches are skipped,
+even if they are also truthy.
 
 Components must **return once**: never early-return based on a reactive value — the branch
 is picked at setup and frozen. Early returns on non-reactive values (build-time config, a
@@ -426,7 +433,9 @@ function ThemeButton() {
 
 Pass accessors/setters/stores through context — never `value={theme()}` (a dead snapshot).
 No `useMemo` for the value object, no context splitting: the object is created once and
-fine-grained updates flow through the signals inside it.
+fine-grained updates flow through the signals inside it. Context is **subtree scoping**.
+A true app-wide singleton (theme, session, locale) is a module-level signal/store —
+do not invent a root provider for that. Module state is shared across SSR requests.
 
 ### Refs
 
@@ -479,7 +488,8 @@ expect(count()).toBe(2);
 ```
 
 Wait for an async expression to settle in tests: `await resolve(() => value())`.
-Run tests in dev mode first — Solid 2 emits diagnostics for top-level reactive reads,
+`flush()` only drains staged **synchronous** writes — it is not a stand-in for waiting
+on a pending resource. Run tests in dev mode first — Solid 2 emits diagnostics for top-level reactive reads,
 writes from owned scopes, and async reads outside `<Loading>`. Fix them; don't suppress.
 
 Component tests use `@solidjs/testing-library`. Pass a **function** to `render` so
@@ -556,8 +566,63 @@ export default function App() {
 Create the instance at **module scope**. Nested layouts are `children` arrays
 on the route objects, not nested `<Route>` / nested routers. Navigate with
 plain `<a href={Router.paths.about}>` (or `useNavigate`); there is no `<A>` /
-`<Navigate>` / `<HashRouter>`. Session location is `useLocation` / `useParams`,
-not `Router.paths`. One router per app.
+`<Navigate>` / `<HashRouter>` / `<FileRoutes />`. Session location is `useLocation` / `useParams`,
+not `Router.paths`. A route `preload` result is `props.data` on the matched
+component (and the factory `preload` result is the root render prop's `props.data`).
+Link warming: `preload="false"` skips that link's *data* preload; `preloadLinks: false`
+disables automatic link preloading. Intent values are `"initial"` / `"navigate"` /
+`"native"` / `"preload"`. One router per app.
+
+**Two different `action`s.** Core `action` from `solid-js` is a generator transaction
+(optimistic writes that span an async gap). Router `action` from `@solidjs/router` is
+a URL-addressable POST mutation (`useSubmissions`, `<form action={save} method="post">`).
+Do not import one and use it as the other.
+
+```tsx
+import { action } from '@solidjs/router';
+import { redirect } from '@solidjs/web';
+
+const save = action(async (form: FormData) => {
+  await saveProfile(form);
+  return redirect('/account');
+}, 'update-profile');
+
+<form action={save} method="post">
+  <input name="displayName" />
+  <button type="submit">Save</button>
+</form>
+```
+
+Only POST forms are accepted. Bind extra args with `.with(id)` (they go in the
+action URL). `onSubmit={(e) => { e.preventDefault(); fetch(...) }}` *runs* and
+drops the no-JS form fallback. `useAction` is JS-only for the same reason.
+
+**`query` is the read cache** (optional, only with the router). Wrap a read,
+give it a stable name, and consume it through a Solid async primitive:
+
+```tsx
+import { createMemo } from 'solid-js';
+import { query, revalidate } from '@solidjs/router';
+
+export const getUser = query(async (id: string) => {
+  const response = await fetch(`/api/users/${id}`);
+  return response.json();
+}, 'users');
+
+const user = createMemo(() => getUser(params.id));
+// after a mutation:
+revalidate(getUser.key);
+revalidate(getUser.keyFor('42'));
+```
+
+A bare `createMemo(async () => fetchUser(id()))` still works; it just has no
+shared cache, no preload reuse, and no `revalidate`. Do not wrap mutations in
+`query` — wrapping an undeclared server function makes it GET. `query.get(key)`
+throws if there is no entry; `query.set` does not accept a promise. Cache is
+request-scoped on the server and application-scoped in the browser. After a
+router mutation, `revalidate(...)` — not core `refresh()`. Replace SolidStart /
+Router 0.x leftovers: no `createAsync`, `useSubmission` (singular), `cache()`,
+router `json()`, or `<FileRoutes />` (`fileRoutes(pageRoutes)` instead).
 
 ### Server functions — `"use server"`
 
@@ -576,10 +641,13 @@ revalidate: `redirect` / `reload` from `@solidjs/web` (see the server-function
 guides). For 404 during SSR: `httpStatus(404)` from `@solidjs/web`.
 `throw new Error("…")` is stripped to `"Internal Server Error"` in production —
 use `markSafeError` or `respond(..., { status })` for intentional client-facing
-failures. `GET()` is only for idempotent reads (URLs leak into logs/history).
+failures. `GET()` is only for idempotent reads (URLs leak into logs/history);
+import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
 `live()` yields **current state** (each yield replaces the last); do not treat
 it as an append-only event log, and hoist the memo so consumers share one
 connection.
+Unscripted forms: `<form method="post" action={createTodo.url}>` (the reference
+`.url`), not a client `preventDefault` + `fetch`.
 
 ### Document head — no MetaProvider
 
@@ -604,7 +672,7 @@ how to reuse. Prefer the form on the right.
 |---|---|
 | `{todos().map((t) => <Row todo={t} />)}` | `<For each={todos()} keyed={(t) => t.id}>` |
 | `<For each={todos().map(t => t)}>` | derive first, then `<For each={visible()}>` |
-| `class={`btn ${on() ? "on" : ""}`}` | `class={["btn", { on: on() }]}` |
+| `class={`btn ${on() ? "on" : ""}`}` / `clsx("btn", on() && "on")` / `.filter(Boolean).join(" ")` | `class={["btn", { on: on() }]}` |
 | `style={{ width: 80 }}` (no unit) | `style={{ width: `${80}px` }}` |
 | `const rest = { ...props }` | `const rest = omit(props, "label")` |
 | `const user = createMemo(async () => { await fetch(...); return id(); })` | read `id()` **before** `await` |
@@ -632,6 +700,24 @@ how to reuse. Prefer the form on the right.
 | `live()` yields as an event log to append | each yield **replaces** the current answer; yield current state first |
 | `<article innerHTML={html()}>…children…</article>` | `innerHTML` **or** children, not both |
 | `fallback={(error) => <p>{error.message}</p>}` | `error` is an accessor: `error().message` (or `String(error())`) |
+| `import { action } from "solid-js"` on a `<form>` | `import { action } from "@solidjs/router"` + `<form action={save} method="post">` (core `action` is a generator transaction, not a form URL) |
+| `createMemo(async () => fetchUser(id()))` when `@solidjs/router` is present | `query(fetchUser, "users")` + `createMemo(() => getUser(id()))`; after mutations `revalidate(getUser.key)`, not core `refresh()` |
+| `onSubmit={(e) => { e.preventDefault(); fetch(...) }}` for a router/server action | `<form action={save} method="post">` (POST only; `.with(id)` binds args into the URL). `useAction` is JS-only |
+| `query(saveUser, "users")` wrapping a mutation | don't wrap mutations in `query` — an undeclared server function becomes GET |
+| `render(<App />, root)` / Testing Library `render(<Counter />)` | `render(() => <App />, root)` — pass a function so Solid creates the root first |
+| `render` onto SSR HTML / `hydrate` into an empty node | `hydrate(() => <App />, root)` when HTML already exists; `render` for an empty mount |
+| `renderToString(() => <App />)` for an async or lazy-route tree | `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`). String render emits `<Loading>` fallbacks |
+| `clientOnly(() => import("./Map"))` for a rarely shown widget | same + `{ lazy: true }` so the import waits until first render (default starts at declaration) |
+| `<NoHydration><Chart /></NoHydration>` to skip SSR of a widget | `clientOnly(() => import("./Chart"))` — `NoHydration`/`Hydration` split ownership, they do not choose visible content |
+| `await flush()` / `flush()` to wait on a pending memo | `await resolve(() => value())` (or Testing Library async queries); `flush()` only drains staged *sync* writes |
+| `action(function* () { setX(v); })` around a navigation-shaped setter | plain setter; async computeds hold previous values. Core `action` only when writes happen *after* async work |
+| `createContext` + a root provider for a true app singleton | module-level signal/store (SSR: shared across requests). Context is subtree scoping |
+| `import { GET } from "@solidjs/start"` / `createAsync` / `useSubmission` / `<FileRoutes />` / `"use client"` | `GET` from `@solidjs/web/server-functions`; `createMemo(() => getUser(id()))`; `useSubmissions`; `fileRoutes(pageRoutes)`; Solid has no `"use client"` |
+| `<Show keyed when={user()}>` by default | default `Show` (keeps children mounted); `keyed` only when internal state must reset |
+| overlapping truthy `<Match>`es all expected to render | first truthy `<Match>` wins; later matches are skipped |
+| missing `<HydrationScript />` / one script for many roots | once, before app markup, when the app owns the document; distinct `renderId` per extra root |
+| `Router.paths` as the current URL; calling `preload()` and using the return as props | `useLocation` / `useParams`; factory/route `preload` result is `props.data` |
+| `query.get(key)` with no guaranteed entry; `query.set(key, promise)` | `query.get` throws if missing; `query.set` does not accept a promise |
 
 ```tsx
 // WRONG — post-await read never subscribes; production can hang pending
@@ -684,6 +770,33 @@ function Page() {
 }
 ```
 
+```tsx
+// WRONG — two different `action`s; the core one is not a form URL
+import { action } from 'solid-js';
+const save = action(async function* (form: FormData) {
+  yield persist(form);
+});
+<form onSubmit={(e) => { e.preventDefault(); void save(new FormData(e.currentTarget)); }}>
+  <button type="submit">Save</button>
+</form>
+
+// CORRECT — router action is POST-addressable (only if `@solidjs/router` is in the project)
+import { action } from '@solidjs/router';
+const save = action(async (form: FormData) => persist(form), 'save');
+<form action={save} method="post">
+  <button type="submit">Save</button>
+</form>
+```
+
+```tsx
+// WRONG — evaluating JSX before the root exists
+import { render } from '@solidjs/web';
+render(<App />, document.getElementById('app')!);
+
+// CORRECT
+render(() => <App />, document.getElementById('app')!);
+```
+
 ## Checking the official docs
 
 Solid 2.0 docs: https://v2.solidjs.com/ — the site blocks non-browser fetchers, so from an
@@ -726,6 +839,11 @@ always-applied rules installed alongside this skill.
       component choice with `dynamic()`. No `React.lazy`, no effects inside ref callbacks.
 - [ ] Browser-only code uses `isServer` / `clientOnly`, not `typeof window`.
 - [ ] If the project has a router: `createRouter({ routes })`, not JSX `<Route>` / `<A>`.
+      Router `action`/`query` come from `@solidjs/router` (POST forms + cache), not
+      core `action`/`refresh`. Forms: `<form action={save} method="post">`.
+- [ ] `render(() => <App />, root)` — a function, not `render(<App />)`. `hydrate` when
+      HTML already exists. Stream async/lazy trees (`await renderToStream(...)`).
 - [ ] `jsxImportSource` is `@solidjs/web`; Vite plugin is `@solidjs/vite-plugin`.
+      No `@solidjs/start`, `vinxi`, `"use client"`, or Next.js imports.
 - [ ] Single return per component; no early returns on reactive conditions.
 - [ ] `solid2-kit check` and the project's typecheck pass.

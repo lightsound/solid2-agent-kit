@@ -69,6 +69,12 @@ const REQUIRED_APIS = [
   'markSafeError',
   'GET',
   'live',
+  'query',
+  'revalidate',
+  'useAction',
+  'useSubmissions',
+  'fileRoutes',
+  'HydrationScript',
 ];
 
 // Solid 1.x names that appear in kit content only as banned examples.
@@ -79,11 +85,13 @@ const BANNED_CREATE = new Set([
   'createSelector',
   'createDeferred',
   'createDynamic',
+  'createAsync',
+  'createAsyncStore',
 ]);
 
 // User-defined custom primitives that appear in kit examples (idiomatically
 // named create*) but are not Solid APIs.
-const EXAMPLE_CREATE = new Set(['createSubscriptionQuery']);
+const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo']);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
