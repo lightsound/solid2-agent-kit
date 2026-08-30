@@ -27,6 +27,9 @@ const REQUIRED_APIS = [
   'Match',
   'Portal',
   'Dynamic',
+  'children',
+  'lazy',
+  'dynamic',
   // reactivity / lifecycle
   'onSettled',
   'onCleanup',
@@ -47,8 +50,21 @@ const REQUIRED_APIS = [
   'storePath',
   // context / rendering
   'useContext',
+  'useHead',
   'render',
   'hydrate',
+  'renderToStream',
+  'clientOnly',
+  'isServer',
+  'isDev',
+  'httpStatus',
+  'hashHistory',
+  'getRequestEvent',
+  'useNavigate',
+  'useLocation',
+  'useParams',
+  'redirect',
+  'reload',
 ];
 
 // Solid 1.x names that appear in kit content only as banned examples.
@@ -58,6 +74,7 @@ const BANNED_CREATE = new Set([
   'createComputed',
   'createSelector',
   'createDeferred',
+  'createDynamic',
 ]);
 
 // User-defined custom primitives that appear in kit examples (idiomatically

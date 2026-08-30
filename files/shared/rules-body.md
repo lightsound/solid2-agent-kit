@@ -40,9 +40,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    recreates every row. Reference keying is for local arrays whose item identities are
    stable (e.g. store rows). Fixed-count / windowed rendering uses `<Repeat>`.
 8. **Effects have two phases**: `createEffect(compute, apply)`. All reactive reads go in
-   `compute`; its return value feeds `apply`, which does imperative work and may return a
-   cleanup. Single-argument `createEffect(fn)` is an error in Solid 2. Most React
-   `useEffect` code should not become an effect at all — see the skill.
+    `compute`; its return value feeds `apply`, which does imperative work and may return a
+    cleanup. Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
+    `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest
+    primitives. Most React `useEffect` code should not become an effect at all — see the skill.
 9. **Stores update by mutating a draft**: `setStore(draft => { draft.user.name = "Ada" })`.
    Never rebuild with spreads — that destroys property-level subscriptions.
 10. **Async data is an async computation**: `createMemo(async () => ...)` read under
@@ -52,8 +53,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 11. Context: the context object is the provider — `<MyContext value={{ theme, setTheme }}>`
     (no `.Provider`). Pass accessors/setters/stores through context, never snapshot values.
     `createContext<T>()` without a default throws when read outside a provider (good).
-12. Refs: `let el!: HTMLDivElement` + `ref={(node) => (el = node)}`, or forward `props.ref`.
-    Compose with arrays: `ref={[props.ref, (node) => (el = node)]}`. No `useRef`/`.current`.
+12. Refs: `let el!: HTMLDivElement` + `ref={el}` or `ref={(node) => (el = node)}`, or forward
+    `props.ref`. Compose with arrays: `ref={[props.ref, (node) => (el = node)]}`. No
+    `useRef`/`.current`. Ref callbacks run untracked and **without an owner**; their
+    return values are ignored. Do not create effects or register cleanup inside a ref
+    callback. For reusable directives, create owned primitives (`onSettled`) in a
+    factory and return only the element callback.
 13. **Writes are staged** and commit on the next microtask. Event handlers need nothing
     special; tests and imperative integration code must call `flush()` before observing
     updated state or DOM. Never call `flush()` inside an `action`.
@@ -101,7 +106,18 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     modals/tooltips/overlays through `<Portal>` from `@solidjs/web`; mutations whose writes
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
     except reactive clients (e.g. Convex) whose subscriptions already push authoritative
-    state after mutations.
+    state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
+    Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`). Server vs browser:
+    `isServer` / `isDev` from `@solidjs/web`, or `clientOnly(() => import("./Widget"))` for
+    browser-only components — never `typeof window` as the SSR boundary.
+23. **Composition.** Pass `props.children` through when you only render them. Inspect or
+    iterate children with `children(() => props.children)` (then `.toArray()`), never a
+    setup-time snapshot. Code-split with `lazy(() => import("./X"))` under `<Loading>` —
+    not `React.lazy` / `<Suspense>`. Named exports: `lazy(() => import("./pages"), { export: "About" })`.
+    Select a component from reactive state with `dynamic(() => ...)` from `@solidjs/web`
+    (stable identity). If the project has `@solidjs/router`, routes are `createRouter({ routes })`
+    at module scope — not JSX `<Route>` / `<A>` / `<HashRouter>`. Document head is
+    `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`.
 
 ## Lint heritage: eslint-plugin-solid (Solid 1.x) intents carried into this file
 
@@ -126,7 +142,7 @@ directory (default `src/`).
 | `solid/event-handlers` | still valid | rule 6 |
 | `solid/jsx-no-undef`, `jsx-no-duplicate-props` | covered by TypeScript | project typecheck |
 | `solid/prefer-classlist` | obsolete — `classList` removed | `solid2-kit check` bans `classList` |
-| `solid/no-unknown-namespaces` | obsolete — `on:`/`use:`/`attr:` removed in 2.0 | banned-API table |
+| `solid/no-unknown-namespaces` | obsolete — `on:`/`use:`/`attr:` removed in 2.0 | banned-API table + `solid2-kit check` |
 | `solid/no-proxy-apis` | obsolete — Solid 2 requires Proxy | not carried |
 
 ## Banned Solid 1.x APIs (Solid 2 replacements)
@@ -147,9 +163,21 @@ directory (default `src/`).
 | `createMutable`, `modifyMutable` | `createStore` + draft setters |
 | `createComputed`, `createSelector`, `createDeferred` | `createMemo`, `createProjection`, external scheduling |
 | `startTransition`, `useTransition` | automatic held updates + `isPending` |
+| `onError` / `catchError` | `<Errored>` or effect bundle `{ effect, error }` |
+| `from(...)` / `observable(...)` (the solid-js helpers) | inbound: async iterable from a memo; outbound: split effect |
+| `createDynamic(...)` | `dynamic(source)` from `@solidjs/web` |
+| `renderToStringAsync(...)` | `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`) |
+| `clearDelegatedEvents` | delete — delegated listeners are scoped to each render root |
+| `vite-plugin-solid` / `jsxImportSource: "solid-js"` | `@solidjs/vite-plugin` / `"jsxImportSource": "@solidjs/web"` |
+| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` | `createRouter({ routes })`, plain `<a href={Router.paths...}>`, `hashHistory()` |
+| `<MetaProvider>` | no provider — render `<Title>` / `<Meta>` / `<Link>` from `@solidjs/meta` anywhere |
 | `use:directive`, `on:`/`oncapture:`, `attr:`/`bool:`, `/*@once*/` | `ref` callbacks, camelCase event props, standard attributes, keep values reactive |
 | `resource.loading` / `resource.error` | `<Loading>` boundary / `<Errored>` boundary |
 
 When unsure about any API, verify against the official Solid 2.0 docs — fetchable URLs are
 listed in `references/official-docs.md` next to the `solid-2` skill. Do not guess from
 Solid 1.x or React memory.
+
+`createTrackedEffect` and `storePath` exist in Solid 2 but are not defaults: use two-phase
+`createEffect` unless a single tracked callback is required, and draft setters instead of
+`storePath` except while converting 1.x path setters.
