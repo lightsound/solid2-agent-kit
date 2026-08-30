@@ -149,7 +149,8 @@ the component must **inspect or iterate** them. It returns an accessor with
 `.toArray()`. The helper call belongs in the component body; the read of
 `props.children` is inside the accessor (a tracking scope), so this is not a
 setup-time snapshot. Do not assign `const kids = props.children` and do not
-treat resolved children as a reactive data list for `<For>`:
+treat resolved children as a reactive data list for `<For>` —
+render `{resolved.toArray()}`, not `<For each={resolved()}>`:
 
 ```tsx
 import { children, type ParentProps } from 'solid-js';
@@ -197,7 +198,8 @@ const Result = dynamic(() => (detailed() ? Detailed : Compact));
 
 `dynamic()` returns a **stable** component whose source can be a component, an
 intrinsic tag name, a promise, or empty. Prefer it over swapping a component
-variable in JSX. `<Dynamic>` is the JSX spelling of the same primitive.
+variable in JSX (`const View = tab() ? A : B` freezes the choice at setup).
+`<Dynamic>` is the JSX spelling of the same primitive.
 
 ### Two-phase effect (imperative boundary only)
 
@@ -287,7 +289,8 @@ function createSubscriptionQuery<T>(
   const queue: T[] = [];
   let failure: unknown;
   let wake = () => {};
-  // Component-owned setup: unsubscribe is tied to the caller's owner.
+  // Custom primitive: unsubscribe is tied to the caller's owner via onCleanup.
+  // Component bodies use onSettled and return cleanup instead.
   onCleanup(subscribe(
     (value) => { queue.push(value); wake(); },
     (error) => { failure = error; wake(); },
@@ -320,6 +323,12 @@ const addTodo = action(function* (todo: Todo) {
 
 Ordinary signal/store writes inside an action are held until it settles. Never call
 `flush()` inside an action. Invoke actions from handlers, not from component/computation bodies.
+Do not set a `submitted` signal and watch it from an effect — that work belongs in the
+handler or the `action`.
+
+`createOptimistic` / `createOptimisticStore` are for a tentative value during an
+active mutation, not a local editing session (use a writable derivation or a plain
+store for that).
 
 **`yield`, not a bare `await`, is the transaction boundary.** `await api.save()` then
 `setTodos(...)` *runs*, but the write commits immediately and optimistic rollback is lost.
@@ -489,7 +498,8 @@ expect(count()).toBe(2);
 
 Wait for an async expression to settle in tests: `await resolve(() => value())`.
 `flush()` only drains staged **synchronous** writes — it is not a stand-in for waiting
-on a pending resource. Run tests in dev mode first — Solid 2 emits diagnostics for top-level reactive reads,
+on a pending resource. `onSettled` is also a **single** fire (untracked): it is not
+`onMount` that re-runs, and it is not an effect. Run tests in dev mode first — Solid 2 emits diagnostics for top-level reactive reads,
 writes from owned scopes, and async reads outside `<Loading>`. Fix them; don't suppress.
 
 Component tests use `@solidjs/testing-library`. Pass a **function** to `render` so
@@ -564,9 +574,13 @@ export default function App() {
 ```
 
 Create the instance at **module scope**. Nested layouts are `children` arrays
-on the route objects, not nested `<Route>` / nested routers. Navigate with
+on the route objects, not nested `<Route>` / nested routers. Solid Router does
+**not** support nested `<Router>` instances — compose one route tree (or a lazy
+`children` thunk). Navigate with
 plain `<a href={Router.paths.about}>` (or `useNavigate`); there is no `<A>` /
-`<Navigate>` / `<HashRouter>` / `<FileRoutes />`. Session location is `useLocation` / `useParams`,
+`<Navigate>` / `<HashRouter>` / `<FileRoutes />`. Do not assign
+`window.location.href` or call `history.pushState` for in-app navigation.
+Session location is `useLocation` / `useParams`,
 not `Router.paths`. A route `preload` result is `props.data` on the matched
 component (and the factory `preload` result is the root render prop's `props.data`).
 Link warming: `preload="false"` skips that link's *data* preload; `preloadLinks: false`
@@ -635,7 +649,8 @@ export async function findUser(id: string) {
 ```
 
 A function-level server function cannot close over component locals — pass
-values as arguments. Treat every argument as untrusted. During SSR the same
+values as arguments. Treat every argument as untrusted. Read trusted identity
+from `getRequestEvent()`, never from a caller-supplied user id. During SSR the same
 reference runs in-process; in the browser it is HTTP. Mutations that should
 revalidate: `redirect` / `reload` from `@solidjs/web` (see the server-function
 guides). For 404 during SSR: `httpStatus(404)` from `@solidjs/web`.
@@ -647,7 +662,9 @@ import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
 it as an append-only event log, and hoist the memo so consumers share one
 connection.
 Unscripted forms: `<form method="post" action={createTodo.url}>` (the reference
-`.url`), not a client `preventDefault` + `fetch`.
+`.url`), not a client `preventDefault` + `fetch`, and not a hand-built
+`/_server/` URL. GET forms (`method="get" action={search.url}`) are only for
+idempotent search — do not use a GET form for a mutation.
 
 ### Document head — no MetaProvider
 
@@ -718,6 +735,24 @@ how to reuse. Prefer the form on the right.
 | missing `<HydrationScript />` / one script for many roots | once, before app markup, when the app owns the document; distinct `renderId` per extra root |
 | `Router.paths` as the current URL; calling `preload()` and using the return as props | `useLocation` / `useParams`; factory/route `preload` result is `props.data` |
 | `query.get(key)` with no guaranteed entry; `query.set(key, promise)` | `query.get` throws if missing; `query.set` does not accept a promise |
+| `onCleanup(() => ...)` in a component body | `onSettled(() => { ...; return cleanup })` — `onCleanup` is for custom primitives |
+| `onSettled` with reactive reads expecting re-runs | each call is a **single** fire; reads are untracked. Ongoing work is `createEffect` |
+| `<Router>` nested inside `<Router>` | one instance; nest `children` arrays (or a lazy children thunk) |
+| `const View = tab() ? A : B; return <View />` | `const View = dynamic(() => (tab() ? A : B))` — the ternary at setup freezes the choice |
+| `<For each={resolved()}>` after `children()` | `{resolved.toArray()}` — resolved children are not a reactive data list |
+| `<input onChange={...}>` for keystrokes | `onInput` — native `onChange` is blur/commit |
+| `createOptimistic` for a local edit draft | writable derivation / plain store. Optimistic is for an in-flight mutation |
+| `createMemo(async fn, { loadingValue })` as the default first-flight UI | `<Loading>` for first flight; `loadingValue` is an escape hatch |
+| `setSubmitted(true)` + an effect that watches it | do the work in the handler or an `action` |
+| `findUser(userId)` with the id from the client as identity | `getRequestEvent()!.locals.userId` |
+| `action={"/_server/" + id}` in app JSX | `action={createTodo.url}` or a router `action` |
+| `<form method="get" action={update.url}>` for a mutation | GET forms only for idempotent search; mutations are POST |
+| `window.location.href = ...` / `history.pushState` | `useNavigate()` or `<a href={Router.paths...}>` |
+| `httpStatus(404)` in a click handler | call it bare in the component / error-fallback body (a scope declaration, not a mutation) |
+| `try { user() } catch (e) { /* NotReadyError */ }` | `<Loading>` — app code should not catch `NotReadyError` |
+| `{latest(() => results())}` as the visible list | settled read + `isPending()` for the indicator; `latest` is for previews |
+| `typeof window !== "undefined"` | `isServer` / `isDev` from `@solidjs/web` |
+| `Object.assign({}, props)` / expecting `merge` to skip `undefined` like 1.x `mergeProps` | `omit` / `merge` — explicit `undefined` **overrides** (Object.assign) |
 
 ```tsx
 // WRONG — post-await read never subscribes; production can hang pending
@@ -797,6 +832,16 @@ render(<App />, document.getElementById('app')!);
 render(() => <App />, document.getElementById('app')!);
 ```
 
+```tsx
+// WRONG — tab() is read once at setup; View never changes
+const View = tab() ? Detailed : Compact;
+return <View value="now" />;
+
+// CORRECT
+const View = dynamic(() => (tab() ? Detailed : Compact));
+return <View value="now" />;
+```
+
 ## Checking the official docs
 
 Solid 2.0 docs: https://v2.solidjs.com/ — the site blocks non-browser fetchers, so from an
@@ -838,8 +883,10 @@ always-applied rules installed alongside this skill.
 - [ ] Inspect children with `children()`; code-split with `lazy` + `<Loading>`; reactive
       component choice with `dynamic()`. No `React.lazy`, no effects inside ref callbacks.
 - [ ] Browser-only code uses `isServer` / `clientOnly`, not `typeof window`.
+      Component teardown is `onSettled` (return cleanup), not `onCleanup`.
 - [ ] If the project has a router: `createRouter({ routes })`, not JSX `<Route>` / `<A>`.
-      Router `action`/`query` come from `@solidjs/router` (POST forms + cache), not
+      One instance, no nested `<Router>`. Navigate with `useNavigate` / `<a href>`, not
+      `window.location`. Router `action`/`query` come from `@solidjs/router` (POST forms + cache), not
       core `action`/`refresh`. Forms: `<form action={save} method="post">`.
 - [ ] `render(() => <App />, root)` — a function, not `render(<App />)`. `hydrate` when
       HTML already exists. Stream async/lazy trees (`await renderToStream(...)`).

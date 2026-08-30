@@ -78,8 +78,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     accessor) only when that identity change should show the fallback again. Pass an async
     memo to a child as the **accessor** (`user={user}`), and read `props.user()` under that
     child's `<Loading>` — `user={user()}` throws not-ready at the parent, so the child's
-    boundary never sees it. "Prop with local edits" = writable derivation:
+    boundary never sees it. Do not `try/catch` `NotReadyError` around a read, and do not
+    use `loadingValue` / `seedLoadingValue` as the default first-flight UI — those skip
+    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer (`isPending`
+    is the indicator). "Prop with local edits" = writable derivation:
     `createSignal(() => props.value)` or `createStore(() => props.value, fallback)`.
+    `createOptimistic` is for an in-flight mutation, not a local editing session.
 11. Context: the context object is the provider — `<MyContext value={{ theme, setTheme }}>`
     (no `.Provider`). Pass accessors/setters/stores through context, never snapshot values.
     `createContext<T>()` without a default throws when read outside a provider (good) — use
@@ -93,7 +97,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `useRef`/`.current`. Ref callbacks run untracked and **without an owner**; their
     return values are ignored. Do not create effects or register cleanup inside a ref
     callback. For reusable directives, create owned primitives (`onSettled`) in a
-    factory and return only the element callback.
+    factory and return only the element callback. Component setup/teardown is
+    `onSettled(() => { ...; return cleanup })` — `onCleanup` is for custom
+    primitives and captured owners, not component bodies. Each `onSettled`
+    registers a **single** fire (reads inside are untracked); ongoing
+    imperative work is `createEffect`.
 13. **Writes are staged** and commit on the next microtask. Event handlers need nothing
     special; tests and imperative integration code must call `flush()` before observing
     updated *synchronous* state or DOM. Waiting on an async memo is
@@ -162,7 +170,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`).
     When the app owns the document, emit `<HydrationScript />` once before app markup;
     extra roots get a distinct `renderId`. Import `GET` from
-    `@solidjs/web/server-functions`, never `@solidjs/start`. `JSON.stringify(store)`
+    `@solidjs/web/server-functions`, never `@solidjs/start`. `httpStatus` /
+    `httpHeader` are scope *declarations* (call them bare in a component or
+    fallback body), not event-time mutations. `JSON.stringify(store)`
     / `structuredClone(store)` without `snapshot(store)` can throw or leak proxies. Async SSR
     without `<Loading>` *works* but blocks the HTML shell until every read settles — wrap
     reads, or stream with `renderToStream`.
@@ -183,7 +193,13 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     reads: `query(fn, "name")` then `createMemo(() => getUser(id()))`; after a mutation
     `revalidate(getUser.key)`. Do not wrap mutations in `query` (an undeclared server
     function becomes GET). `Router.paths` is not the current location (`useLocation` /
-    `useParams`); a route `preload` result is `props.data`. Document head is
+    `useParams`); a route `preload` result is `props.data`. One router instance —
+    Solid Router does not support nested `<Router>` / nested `createRouter`.
+    In-app navigation is `useNavigate` or `<a href={Router.paths...}>`, not
+    `window.location` / `history.pushState`. Trusted identity is
+    `getRequestEvent()`, never a caller-supplied user id. Unscripted forms use
+    the function `.url` (or a router `action`), not a hand-built `/_server/`
+    path. Document head is
     `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`.
 
 ## Lint heritage: eslint-plugin-solid (Solid 1.x) intents carried into this file
@@ -238,7 +254,7 @@ directory (default `src/`).
 | `vite-plugin-solid` / `jsxImportSource: "solid-js"` | `@solidjs/vite-plugin` / `"jsxImportSource": "@solidjs/web"` |
 | JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` / `<FileRoutes>` | `createRouter({ routes })`, `fileRoutes(pageRoutes)`, plain `<a href={Router.paths...}>`, `hashHistory()` |
 | `createAsync` / `createAsyncStore` / `useSubmission` / router `json()` / `cache()` | `createMemo(() => getUser(id()))`, `useSubmissions`, `respond()` from `@solidjs/web`, `query` |
-| `import ... from "@solidjs/start"` / `vinxi` / `"use client"` | `GET` from `@solidjs/web/server-functions`; Solid has no `"use client"` |
+| `import ... from "@solidjs/start"` / `vinxi` / `h3` / `"use client"` | `GET` from `@solidjs/web/server-functions`; Solid has no `"use client"` |
 | `render(<App />, root)` | `render(() => <App />, root)` (same for `hydrate` / `renderToString` / `renderToStream`) |
 | `<MetaProvider>` | no provider — render `<Title>` / `<Meta>` / `<Link>` from `@solidjs/meta` anywhere |
 | `use:directive`, `on:`/`oncapture:`, `attr:`/`bool:`, `/*@once*/` | `ref` callbacks, camelCase event props, standard attributes, keep values reactive |

@@ -58,6 +58,7 @@ const REQUIRED_APIS = [
   'isServer',
   'isDev',
   'httpStatus',
+  'httpHeader',
   'hashHistory',
   'getRequestEvent',
   'useNavigate',
