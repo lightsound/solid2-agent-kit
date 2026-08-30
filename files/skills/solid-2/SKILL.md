@@ -176,7 +176,9 @@ const About = lazy(() => import('./pages'), { export: 'About' });
 ```
 
 Never `React.lazy` / `<Suspense>`. The lazy component suspends through
-`<Loading>` on first render; `.preload()` starts the import early.
+`<Loading>` on first render; `.preload()` starts the import early. Named
+exports must use `{ export: "About" }` — a `.then((m) => ({ default: m.About }))`
+wrapper hydrates incorrectly (the name is not a call-site literal).
 
 ### Dynamic component: `dynamic()` (canonical)
 
@@ -572,6 +574,12 @@ values as arguments. Treat every argument as untrusted. During SSR the same
 reference runs in-process; in the browser it is HTTP. Mutations that should
 revalidate: `redirect` / `reload` from `@solidjs/web` (see the server-function
 guides). For 404 during SSR: `httpStatus(404)` from `@solidjs/web`.
+`throw new Error("…")` is stripped to `"Internal Server Error"` in production —
+use `markSafeError` or `respond(..., { status })` for intentional client-facing
+failures. `GET()` is only for idempotent reads (URLs leak into logs/history).
+`live()` yields **current state** (each yield replaces the last); do not treat
+it as an append-only event log, and hoist the memo so consumers share one
+connection.
 
 ### Document head — no MetaProvider
 
@@ -609,6 +617,21 @@ how to reuse. Prefer the form on the right.
 | `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
 | `setHandler(fn)` to store a function | `setHandler(() => fn)` (otherwise `fn` is an updater) |
 | `{user() ? <P user={user()!} /> : <SignIn />}` | `<Show when={user()}>{(u) => <P user={u()} />}</Show>` |
+| `<Child user={user()} />` for an async memo | `<Child user={user} />` and read `props.user()` under the child's `<Loading>` |
+| `lazy(() => import("./p").then((m) => ({ default: m.About })))` | `lazy(() => import("./p"), { export: "About" })` |
+| `dangerouslySetInnerHTML={{ __html }}` | `innerHTML={html()}` (sanitized); never with JSX children |
+| `onClick={setCount}` | `onClick={() => setCount((c) => c + 1)}` |
+| `event.target.value` | `event.currentTarget.value` |
+| `createContext(emptyStore)` for reactive state | `createContext<Todos>()` — dummy defaults silently no-op |
+| `<For keyed={(t) => t.id}>{(todo) => todo.title}` | `todo().title` — key-function items are accessors |
+| `{list().length ? <For each={list()}> : <Empty />}` | `<For each={list()} fallback={<Empty />}>` |
+| `<For each={rows.slice(from, from + n)}>` | `<Repeat from={from()} count={n}>` |
+| `{count() && <Badge />}` | `<Show when={count()}>` — `0` must not render as text |
+| `throw new Error("expired")` from a server function (prod) | `throw markSafeError(...)` or `throw respond(body, { status })` |
+| `GET(async (id) => { "use server"; await db.delete(id) })` | mutations stay on POST; `GET()` is for idempotent reads |
+| `live()` yields as an event log to append | each yield **replaces** the current answer; yield current state first |
+| `<article innerHTML={html()}>…children…</article>` | `innerHTML` **or** children, not both |
+| `fallback={(error) => <p>{error.message}</p>}` | `error` is an accessor: `error().message` (or `String(error())`) |
 
 ```tsx
 // WRONG — post-await read never subscribes; production can hang pending
@@ -640,6 +663,27 @@ function Field(props: { label: string; class?: string }) {
 }
 ```
 
+```tsx
+// WRONG — user() throws not-ready at Page; child's <Loading> never sees it
+function Page() {
+  const user = createMemo(async () => (await fetch('/api/me')).json());
+  return <Profile user={user()} />;
+}
+
+// CORRECT — pass the accessor; read it under the boundary that owns the fallback
+function Profile(props: { user: Accessor<User> }) {
+  return (
+    <Loading fallback={<p>Loading…</p>}>
+      <h1>{props.user().name}</h1>
+    </Loading>
+  );
+}
+function Page() {
+  const user = createMemo(async () => (await fetch('/api/me')).json());
+  return <Profile user={user} />;
+}
+```
+
 ## Checking the official docs
 
 Solid 2.0 docs: https://v2.solidjs.com/ — the site blocks non-browser fetchers, so from an
@@ -661,7 +705,10 @@ always-applied rules installed alongside this skill.
 - [ ] Every reactive read (`signal()`, `props.x`, `store.x`) sits in JSX, a memo, an effect
       compute, or a boundary — not the component body.
 - [ ] No signal-synced-by-effect; derived values are functions or memos.
-- [ ] `class` / CSS-name `style` / `onInput` — no `className`, `backgroundColor`, per-keystroke `onChange`.
+- [ ] Event handlers wrap setters (`onClick={() => setX(...)}`), use `currentTarget`,
+      and `onInput` for keystrokes. `innerHTML` is sanitized and not mixed with children.
+- [ ] Async memos are passed as accessors (`user={user}`), not `user={user()}`, so
+      `<Loading>` around the *read* can catch not-ready.
 - [ ] Lists via `<For>` (server/refetched rows keyed by stable id), conditionals via
       ternary/`<Show>`; no `{list().map(...)}` in JSX; no `key` props; no `value()!`.
 - [ ] Effects are two-phase and only at imperative boundaries; apply does not read stores.

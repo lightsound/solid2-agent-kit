@@ -46,6 +46,10 @@ const expected = [
   'jsx-accessor-map',
   'for-each-map',
   'props-rest-copy',
+  'lazy-then-wrapper',
+  'dangerously-set-inner-html',
+  'setter-as-handler',
+  'react-hook',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {
