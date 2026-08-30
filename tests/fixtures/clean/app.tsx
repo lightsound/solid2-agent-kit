@@ -1,6 +1,8 @@
 import {
   children,
   createUniqueId,
+  isPending,
+  latest,
   lazy,
   Loading,
   omit,
@@ -41,6 +43,10 @@ function Stack(props: ParentProps<{ title?: string }>) {
   const resolved = children(() => props.children);
   const rest = omit(props, 'title');
   const id = createUniqueId();
+  const title = () => props.title ?? '';
+  void isPending(title);
+  void isPending(() => title());
+  void latest(title);
   return (
     <section {...rest} id={id} class={['stack', { ready: true }]}>
       <Title>Home</Title>

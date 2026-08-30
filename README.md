@@ -16,7 +16,7 @@ Supported agents: **Cursor** and **Claude Code**.
 | Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 23 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
 | Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables, canonical patterns, a “still runs / write the other form” table, review checklist, official-doc URL index |
 | Shared agent context | managed block in `AGENTS.md` | same (Claude Code users can reference it from `CLAUDE.md`) | Core principles and pointers, always in context |
-| Mechanical gate | `solid2-kit check` | same | Comment-stripped regex guard over `src/**/*.{ts,tsx,jsx}` (or explicit `[files...]`): fails on props destructuring (including multi-line signatures), `{ ...props }` rest copies, `{list().map(...)}` in JSX, React imports/hooks/JSX props/`React.lazy`/`useOptimistic`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<A>`/`<HashRouter>`/`<FileRoutes>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, `=== undefined` readiness branches, SolidStart leftovers (`@solidjs/start`, `createAsync`, `useSubmission`, `"use client"`), Next.js imports, and `render(<App />)` (pass a function) |
+| Mechanical gate | `solid2-kit check` | same | Comment-stripped regex guard over `src/**/*.{ts,tsx,jsx}` (or explicit `[files...]`): fails on props destructuring (including multi-line signatures), `{ ...props }` rest copies, `{list().map(...)}` in JSX, React imports/hooks/JSX props/`React.lazy`/`useOptimistic`/`onDoubleClick`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<A>`/`<HashRouter>`/`<FileRoutes>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, `=== undefined` readiness branches, SolidStart leftovers (`@solidjs/start`, `h3`, `createAsync`, `useSubmission`, `"use client"`), Next.js imports/`useRouter`/`typeof window`, `history.pushState`, `render(<App />)` (pass a function), `isPending(user())` / `latest(user())` (pass the accessor), and `<Dynamic>` (use `dynamic()`) |
 | Edit-time hook | `postToolUse` entry in `.cursor/hooks.json` | `PostToolUse` entry in `.claude/settings.json` (matcher includes `Bash`) | Runs the mechanical gate automatically on **every agent file edit — including edits made through shell commands** (sed, heredocs, codemods; source paths mentioned in the command are checked after it ran) — and feeds findings straight back into the conversation (Cursor: `additional_context`; Claude Code: stderr + exit 2), so enforcement does not depend on the agent remembering to run `check`. Wired only when the kit is a local devDependency; opt out with `--no-hooks` |
 | Turn-end gate | — | `Stop` entry in `.claude/settings.json` | Whole-project `check` + `doctor` when the agent tries to end its turn: with findings in place the stop is blocked (exit 2) and the findings are fed back, so a turn cannot finish with React/Solid 1.x patterns left behind. Loop-safe via `stop_hook_active` (one forced continuation, never an infinite loop) |
 | Pre-execution guard | `preToolUse` + `beforeShellExecution` entries in `.cursor/hooks.json` | `PreToolUse` entry in `.claude/settings.json` | Denies actions **before they run**: edits/deletes of kit-owned guardrail files (an agent blocked by a gate will try to remove the gate), edits that would strip the kit's hook entries or managed blocks, uninspectable shell rewrites of those files, and `npm/pnpm/yarn/bun install` of banned dependencies (`react`, `vite-plugin-solid`, `eslint-plugin-solid`, SolidStart, ...) — caught proactively instead of post-hoc by `doctor` |
@@ -29,8 +29,8 @@ on sync.
 
 ## Usage
 
-GitHub is the canonical distribution channel (the kit is intentionally not published to
-npm; consumers pin a commit through their lockfile):
+GitHub is the canonical distribution channel (consumers pin a commit through their
+lockfile); the package is also published to npm as `solid2-agent-kit`:
 
 ```sh
 # install guidance for both Cursor and Claude Code (default)
@@ -65,8 +65,8 @@ resolve the project-local bin, so the bare name is safe there):
 ```
 
 Update later with `bun update solid2-agent-kit` (or the npm/pnpm equivalent) followed by
-`npx solid2-agent-kit sync`. Outside a project that has the kit installed, always use the
-`npx github:...` form — the bare package name is not claimed on the npm registry.
+`npx solid2-agent-kit sync`. Outside a project that has the kit installed, prefer the
+`npx github:...` form — it always tracks this repo directly.
 
 ## Edit-time hooks (automatic enforcement)
 
@@ -171,6 +171,14 @@ files/commands/solid2-review.md    /solid2-review command (Cursor + Claude Code)
 scripts/check-docs-drift.mjs       weekly docs cross-check
 tests/                             check/doctor fixtures + hook and init-merge tests (`npm test`)
 ```
+
+## Publishing (npm)
+
+Bump `version` in `package.json` on `main` and CI publishes automatically
+(`.github/workflows/publish.yml`) — it skips when the version already exists on npm.
+Auth is npm Trusted Publishing (OIDC), so no NPM_TOKEN secret exists or is needed.
+One-time setup on npm: package → Settings → Trusted Publisher → GitHub Actions, owner
+`lightsound`, repo `solid2-agent-kit`, workflow `publish.yml`, environment left empty.
 
 ## License
 
