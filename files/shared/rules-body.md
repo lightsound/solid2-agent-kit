@@ -25,7 +25,13 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    (the function itself) into JSX and call it there.
 3. Signals are read by **calling** them: `{count()}` in JSX, not `{count}`.
 4. **Derived state is a function, not state + effect.** `const full = () => a() + b()`.
-   Never write "a signal plus an effect that syncs it". Use `createMemo` only for expensive
+   Never write "a signal plus an effect that syncs it". That includes **reset**: to clear
+   a signal when another reactive value changes, use a writable derivation —
+   `createSignal(() => { source(); return initial; })` (re-runs when `source()` changes;
+   the setter still works) — never a `createEffect` whose apply calls the setter. The
+   derivation also moves the `source()` read to the read site, under its boundaries.
+   Mechanically enforced by `solid2-kit check` (effects whose apply only writes a local
+   signal). Use `createMemo` only for expensive
    computations, multiple consumers, or an equality boundary. When several writes can land
    before a flush, use the setter updater (`setCount((c) => c + 1)`); `setCount(count() + 1)`
    reads the last *committed* value and drops the other staged writes. To store a *function*
@@ -175,7 +181,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     visible content — `clientOnly` is for components that must never run on the server.
     Pass a **function** to `render` / `hydrate` / `renderToString` / `renderToStream`
     (`render(() => <App />, root)`), never `render(<App />, root)`. `hydrate` when the
-    container already holds SSR HTML; `render` for an empty mount. `renderToString`
+    container already holds SSR HTML; `render` for an empty mount. Client mode (the
+    `@solidjs/vite-plugin` default) mounts with `render()` into an empty body — there is
+    **no server HTML and no hydration mismatch**, so React's mismatch defenses
+    ("server-safe" initial values adopted after mount, two-pass rendering) are unnecessary
+    and can clobber persisted state; read `localStorage` / `matchMedia` directly when
+    creating the signal. `renderToString`
     emits `<Loading>` fallbacks; async or lazy-route trees need
     `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`).
     When the app owns the document, emit `<HydrationScript />` once before app markup;
@@ -256,6 +267,7 @@ directory (default `src/`).
 | Never write (Solid 1.x) | Write instead (Solid 2) |
 |---|---|
 | `import ... from "solid-js/store"` or `"solid-js/web"` | stores/`merge`/`omit` from `"solid-js"`; `render`/`hydrate`/`Portal`/`Dynamic` from `"@solidjs/web"` |
+| `import type { JSX } from "solid-js"` / `JSX.Element` as the children type | `solid-js` exports no `JSX` namespace: children/returns are `Element` from `"solid-js"`; DOM-specific `JSX` types (`JSX.IntrinsicElements`, `JSX.CSSProperties`) from `"@solidjs/web"` |
 | `createResource` | async `createMemo` + `<Loading>`/`<Errored>`; `refresh()`, `latest()`, `isPending()` |
 | `createEffect(fn)` (one arg), `on(...)` | `createEffect(compute, apply)`; deps belong in `compute` |
 | `onMount` | `onSettled` (return cleanup from its callback) |

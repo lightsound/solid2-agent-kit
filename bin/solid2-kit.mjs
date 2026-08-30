@@ -274,6 +274,86 @@ function init() {
 
 // --- check ------------------------------------------------------------------
 
+// Balanced-scan helpers for the effect-sync check: regexes cannot pair the
+// parentheses of a createEffect(...) call, so scan (string-aware; comments
+// are already stripped) for the matching closer from an opening bracket.
+function scanBalanced(content, openIndex) {
+  let depth = 0;
+  let quote = null;
+  for (let i = openIndex; i < content.length; i += 1) {
+    const ch = content[i];
+    if (quote !== null) {
+      if (ch === '\\') i += 1;
+      else if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+    } else if (ch === '(' || ch === '{' || ch === '[') {
+      depth += 1;
+    } else if (ch === ')' || ch === '}' || ch === ']') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function splitTopLevelArgs(argsText) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let start = 0;
+  for (let i = 0; i < argsText.length; i += 1) {
+    const ch = argsText[i];
+    if (quote !== null) {
+      if (ch === '\\') i += 1;
+      else if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+    } else if (ch === '(' || ch === '{' || ch === '[') {
+      depth += 1;
+    } else if (ch === ')' || ch === '}' || ch === ']') {
+      depth -= 1;
+    } else if (ch === ',' && depth === 0) {
+      parts.push(argsText.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(argsText.slice(start));
+  return parts;
+}
+
+// An apply phase that is nothing but one (optionally if-guarded) call to a
+// local signal setter is "a signal plus an effect that syncs it" — rule 4.
+// Restricting to setters declared via createSignal destructuring in the same
+// file keeps external set* functions (setDefaultOptions, setTimeout) out.
+function soleLocalSetterApply(apply, localSetters) {
+  const head = apply.match(
+    /^(?:async\s*)?(?:\([^()]*\)|[\w$]+)\s*=>\s*\{?\s*(?:if\s*\((?:[^()]|\([^()]*\))*\)\s*\{?\s*)?(set[A-Z][\w$]*)\s*\(/,
+  );
+  if (!head || !localSetters.has(head[1])) return false;
+  const close = scanBalanced(apply, head[0].length - 1);
+  if (close === -1) return false;
+  return /^[\s;}]*$/.test(apply.slice(close + 1));
+}
+
+const LOCAL_SETTER_DECL = /\[\s*[\w$]+\s*,\s*(set[A-Z][\w$]*)\s*\]\s*=\s*createSignal\b/g;
+
+function effectSyncFindings(content) {
+  const localSetters = new Set([...content.matchAll(LOCAL_SETTER_DECL)].map((m) => m[1]));
+  if (localSetters.size === 0) return [];
+  const matches = [];
+  for (const call of content.matchAll(/\bcreateEffect\s*(?:<[^>()]*>)?\s*\(/g)) {
+    const open = call.index + call[0].length - 1;
+    const close = scanBalanced(content, open);
+    if (close === -1) continue;
+    const args = splitTopLevelArgs(content.slice(open + 1, close));
+    if (args.length >= 2 && soleLocalSetterApply(args[1].trim(), localSetters)) {
+      matches.push({ index: call.index });
+    }
+  }
+  return matches;
+}
+
 const CHECKS = [
   {
     id: 'props-destructure-param',
@@ -297,6 +377,20 @@ const CHECKS = [
     pattern: /from\s+['"]solid-js\/(?:store|web|h|html|universal|jsx-runtime|jsx-dev-runtime)['"]/g,
     message:
       'Solid 1.x import path. Stores/merge/omit come from "solid-js"; render/hydrate/Portal/Dynamic come from "@solidjs/web".',
+  },
+  {
+    id: 'jsx-namespace-import',
+    pattern: /import\s+(?:type\s+)?\{[^}]*\bJSX\b[^}]*\}\s*from\s+['"]solid-js['"]/g,
+    message:
+      'Solid 2 does not export a `JSX` namespace from "solid-js" (TS2305). Children/return types are `Element` from "solid-js"; DOM-specific JSX types (JSX.IntrinsicElements, JSX.CSSProperties) come from "@solidjs/web".',
+  },
+  {
+    // A two-phase createEffect whose apply is nothing but one (optionally
+    // if-guarded) call to a setter declared via createSignal in this file.
+    id: 'effect-sync-signal',
+    find: effectSyncFindings,
+    message:
+      'Effect that only syncs a local signal — "state + effect" (rule 4). Derive the value instead; to reset state when another reactive value changes, use a writable derivation: createSignal(() => { source(); return initial; }).',
   },
   {
     id: 'react-jsx-prop',
@@ -572,7 +666,7 @@ function fileFindings(file, relativeTo) {
   const lines = raw.split('\n');
   const findings = [];
   for (const rule of CHECKS) {
-    for (const match of content.matchAll(rule.pattern)) {
+    for (const match of rule.find ? rule.find(content) : content.matchAll(rule.pattern)) {
       const lineNumber = content.slice(0, match.index).split('\n').length;
       findings.push(
         `${relative(relativeTo, file) || file}:${lineNumber} [${rule.id}] ${rule.message}\n  > ${lines[lineNumber - 1].trim()}`,
