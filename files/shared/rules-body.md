@@ -165,7 +165,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
     except reactive clients (e.g. Convex) whose subscriptions already push authoritative
     state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
-    Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`). Server vs browser:
+    Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`) — run `solid2-kit doctor`
+    after touching `package.json` / tsconfig / root configs; it fails on React and Solid 1.x
+    wiring. Server vs browser:
     `isServer` / `isDev` from `@solidjs/web`, or `clientOnly(() => import("./Widget"))` for
     browser-only components — never `typeof window` as the SSR boundary. Default
     `clientOnly` starts loading at declaration; `{ lazy: true }` defers until first

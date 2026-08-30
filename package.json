@@ -1,6 +1,6 @@
 {
   "name": "solid2-agent-kit",
-  "version": "0.4.5",
+  "version": "0.7.0",
   "description": "Teach AI coding agents (Cursor, Claude Code) to write correct Solid 2.0 instead of React or Solid 1.x — always-applied rules, an agent skill, and a mechanical pattern gate.",
   "type": "module",
   "license": "MIT",
@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "check:drift": "node scripts/check-docs-drift.mjs",
-    "test": "node tests/check.test.mjs"
+    "test": "node tests/check.test.mjs && node tests/hook.test.mjs && node tests/doctor.test.mjs && node tests/init.test.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -2,12 +2,15 @@
 // solid2-agent-kit CLI — installs and maintains Solid 2.0 guidance for AI
 // coding agents (Cursor and Claude Code), and runs a mechanical pattern gate.
 //
-//   solid2-kit init  [--cursor] [--claude] [--target <dir>]
-//   solid2-kit sync  [--cursor] [--claude] [--target <dir>]   (alias of init)
-//   solid2-kit check [--dir <srcdir>] [--target <dir>]
+//   solid2-kit init  [--cursor] [--claude] [--no-hooks] [--target <dir>]
+//   solid2-kit sync  [--cursor] [--claude] [--no-hooks] [--target <dir>]   (alias of init)
+//   solid2-kit check [--dir <srcdir>] [--target <dir>] [files...]
+//   solid2-kit doctor [--target <dir>]
+//   solid2-kit hook (claude|cursor)          (stdin: agent hook JSON payload)
 //
-// `init`/`sync` are idempotent: kit-owned files are overwritten and managed
-// blocks in AGENTS.md / CLAUDE.md are replaced in place.
+// `init`/`sync` are idempotent: kit-owned files are overwritten, managed
+// blocks in AGENTS.md / CLAUDE.md are replaced in place, and hook entries in
+// .cursor/hooks.json / .claude/settings.json are merged without duplicates.
 
 import {
   cpSync,
@@ -30,6 +33,20 @@ const command = args[0];
 function flagValue(name, fallback) {
   const index = args.indexOf(name);
   return index === -1 || index + 1 >= args.length ? fallback : args[index + 1];
+}
+
+const VALUE_FLAGS = new Set(['--dir', '--target']);
+
+function positionalArgs() {
+  const out = [];
+  for (let i = 1; i < args.length; i += 1) {
+    if (args[i].startsWith('--')) {
+      if (VALUE_FLAGS.has(args[i])) i += 1;
+      continue;
+    }
+    out.push(args[i]);
+  }
+  return out;
 }
 
 // --- init / sync ------------------------------------------------------------
@@ -74,6 +91,104 @@ function writeKitOwnedFile(filePath, body) {
   return filePath;
 }
 
+// Hook commands run from the project root without node_modules/.bin on PATH,
+// so they invoke the locally installed kit through node directly. `init` only
+// wires hooks when that file exists (kit installed as a dependency).
+const KIT_LOCAL_BIN = 'node_modules/solid2-agent-kit/bin/solid2-kit.mjs';
+
+function readJsonConfig(filePath) {
+  if (!existsSync(filePath)) return {};
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    console.warn(
+      `solid2-kit — warning: ${filePath} is not valid JSON. File left untouched; fix it and re-run sync to wire the edit hook.`,
+    );
+    return null;
+  }
+}
+
+function writeJsonConfig(filePath, config) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`);
+  return filePath;
+}
+
+// Replace the existing kit-owned entry (identified by the marker in its
+// command) or append a fresh one — sync then updates matchers/commands that
+// changed between kit versions while leaving user entries untouched.
+function upsertHookEntry(entries, marker, entry, matches) {
+  const index = entries.findIndex((existing) => matches(existing, marker));
+  if (index === -1) entries.push(entry);
+  else entries[index] = entry;
+}
+
+const cursorEntryMatches = (entry, marker) =>
+  typeof entry?.command === 'string' && entry.command.includes(marker);
+const claudeEntryMatches = (entry, marker) =>
+  (entry?.hooks ?? []).some((item) => typeof item?.command === 'string' && item.command.includes(marker));
+
+// Cursor hooks: postToolUse (post-edit check injected as additional_context)
+// plus preToolUse / beforeShellExecution (pre-execution guard: guardrail
+// tampering and banned-dependency installs are denied before they run).
+function upsertCursorHook(target) {
+  const filePath = join(target, '.cursor/hooks.json');
+  const config = readJsonConfig(filePath);
+  if (config === null) return null;
+  config.version ??= 1;
+  config.hooks ??= {};
+  const command = `node ${KIT_LOCAL_BIN} hook cursor`;
+  for (const event of ['postToolUse', 'preToolUse', 'beforeShellExecution']) {
+    upsertHookEntry((config.hooks[event] ??= []), 'solid2-kit.mjs hook cursor', { command }, cursorEntryMatches);
+  }
+  return writeJsonConfig(filePath, config);
+}
+
+// Claude Code hooks: PostToolUse (`hook claude` prints findings to stderr and
+// exits 2, which Claude Code feeds back into the model as correction context;
+// Bash is matched so shell edits via sed/heredocs are gated too), PreToolUse
+// (pre-execution guard, may deny) and Stop (whole-project final gate — the
+// agent cannot end its turn with findings).
+function upsertClaudeHook(target) {
+  const filePath = join(target, '.claude/settings.json');
+  const config = readJsonConfig(filePath);
+  if (config === null) return null;
+  config.hooks ??= {};
+  const command = `node ${KIT_LOCAL_BIN} hook claude`;
+  const toolMatcher = 'Edit|MultiEdit|Write|Bash';
+  upsertHookEntry(
+    (config.hooks.PreToolUse ??= []),
+    'solid2-kit.mjs hook claude',
+    { matcher: toolMatcher, hooks: [{ type: 'command', command, timeout: 30 }] },
+    claudeEntryMatches,
+  );
+  upsertHookEntry(
+    (config.hooks.PostToolUse ??= []),
+    'solid2-kit.mjs hook claude',
+    { matcher: toolMatcher, hooks: [{ type: 'command', command, timeout: 30 }] },
+    claudeEntryMatches,
+  );
+  upsertHookEntry(
+    (config.hooks.Stop ??= []),
+    'solid2-kit.mjs hook claude',
+    { hooks: [{ type: 'command', command, timeout: 60 }] },
+    claudeEntryMatches,
+  );
+  return writeJsonConfig(filePath, config);
+}
+
+// Wire a `lint:solid` script (referenced by the AGENTS.md guidance) into the
+// consuming project so agents and CI can run both gates by name.
+function upsertLintScript(target) {
+  const filePath = join(target, 'package.json');
+  if (!existsSync(filePath)) return null;
+  const pkg = readJsonConfig(filePath);
+  if (pkg === null) return null;
+  if (pkg.scripts?.['lint:solid']) return null;
+  (pkg.scripts ??= {})['lint:solid'] = 'solid2-kit check && solid2-kit doctor';
+  return writeJsonConfig(filePath, pkg);
+}
+
 function copySkill(targetSkillDir) {
   // The skill directory is kit-owned: remove it first so files deleted in
   // newer kit versions do not linger after a sync.
@@ -92,6 +207,7 @@ function init() {
 
   const rulesBody = readFileSync(join(KIT_ROOT, 'files/shared/rules-body.md'), 'utf8');
   const agentsSection = readFileSync(join(KIT_ROOT, 'files/shared/agents-section.md'), 'utf8');
+  const reviewCommand = readFileSync(join(KIT_ROOT, 'files/commands/solid2-review.md'), 'utf8');
   const written = [];
 
   if (wantCursor) {
@@ -109,10 +225,12 @@ function init() {
     ].join('\n');
     written.push(writeKitOwnedFile(join(target, '.cursor/rules/solid-2.mdc'), mdc));
     written.push(copySkill(join(target, '.cursor/skills/solid-2')));
+    written.push(writeKitOwnedFile(join(target, '.cursor/commands/solid2-review.md'), reviewCommand));
   }
 
   if (wantClaude) {
     written.push(copySkill(join(target, '.claude/skills/solid-2')));
+    written.push(writeKitOwnedFile(join(target, '.claude/commands/solid2-review.md'), reviewCommand));
     // Claude Code has no glob-attached rules mechanism; CLAUDE.md is always
     // loaded, so the full rules body lives there in a managed block.
     written.push(
@@ -134,8 +252,24 @@ function init() {
     ),
   );
 
+  // Edit-time hooks: run the mechanical gate automatically on every agent
+  // file edit, so enforcement does not depend on the agent remembering to
+  // run `solid2-kit check`.
+  let hooksNote = null;
+  if (!args.includes('--no-hooks')) {
+    if (existsSync(join(target, KIT_LOCAL_BIN))) {
+      if (wantCursor) written.push(upsertCursorHook(target));
+      if (wantClaude) written.push(upsertClaudeHook(target));
+      written.push(upsertLintScript(target));
+    } else {
+      hooksNote =
+        'edit-time hooks not wired: install the kit as a devDependency ("solid2-agent-kit": "github:lightsound/solid2-agent-kit") so `node node_modules/solid2-agent-kit/bin/solid2-kit.mjs` resolves, then re-run sync. Pass --no-hooks to silence this note.';
+    }
+  }
+
   console.log(`solid2-agent-kit v${VERSION} — installed for ${[wantCursor && 'Cursor', wantClaude && 'Claude Code'].filter(Boolean).join(' + ')}:`);
   for (const path of written.filter(Boolean)) console.log(`  ${relative(target, path) || '.'}`);
+  if (hooksNote) console.log(`  note: ${hooksNote}`);
 }
 
 // --- check ------------------------------------------------------------------
@@ -367,8 +501,59 @@ const CHECKS = [
   },
 ];
 
-// .ts / .tsx sources, excluding .d.ts declaration files.
-const SOURCE_FILE = /(?<!\.d)\.tsx?$/;
+// .ts / .tsx / .jsx sources, excluding .d.ts declaration files.
+const SOURCE_FILE = /(?<!\.d)\.(?:tsx?|jsx)$/;
+
+// Blank comment interiors (preserving newlines and offsets) so banned tokens
+// mentioned in comments ("migrated off createResource") do not trip the gate.
+// String and template contents are preserved — some checks match string
+// literals ("use client"). This is a heuristic scanner, not a JS lexer: a
+// regex literal containing escaped slashes or `//` in JSX text can blank the
+// remainder of that one line (false negatives only, never false positives).
+function stripComments(content) {
+  let out = '';
+  let state = 'code';
+  for (let i = 0; i < content.length; i += 1) {
+    const ch = content[i];
+    const next = content[i + 1];
+    if (state === 'code') {
+      if (ch === '/' && (next === '/' || next === '*')) {
+        state = next === '/' ? 'line' : 'block';
+        out += '  ';
+        i += 1;
+      } else {
+        if (ch === "'") state = 'single';
+        else if (ch === '"') state = 'double';
+        else if (ch === '`') state = 'template';
+        out += ch;
+      }
+    } else if (state === 'line') {
+      if (ch === '\n') state = 'code';
+      out += ch === '\n' ? ch : ' ';
+    } else if (state === 'block') {
+      if (ch === '*' && next === '/') {
+        state = 'code';
+        out += '  ';
+        i += 1;
+      } else {
+        out += ch === '\n' ? ch : ' ';
+      }
+    } else {
+      out += ch;
+      if (ch === '\\') {
+        out += next ?? '';
+        i += 1;
+      } else if (
+        (state === 'single' && ch === "'") ||
+        (state === 'double' && ch === '"') ||
+        (state === 'template' && ch === '`')
+      ) {
+        state = 'code';
+      }
+    }
+  }
+  return out;
+}
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -378,36 +563,435 @@ function* walk(dir) {
   }
 }
 
+// One formatted finding per pattern match: "path:line [id] message\n  > source".
+// Patterns run against comment-stripped content (same offsets); the quoted
+// source line comes from the original file.
+function fileFindings(file, relativeTo) {
+  const raw = readFileSync(file, 'utf8');
+  const content = stripComments(raw);
+  const lines = raw.split('\n');
+  const findings = [];
+  for (const rule of CHECKS) {
+    for (const match of content.matchAll(rule.pattern)) {
+      const lineNumber = content.slice(0, match.index).split('\n').length;
+      findings.push(
+        `${relative(relativeTo, file) || file}:${lineNumber} [${rule.id}] ${rule.message}\n  > ${lines[lineNumber - 1].trim()}`,
+      );
+    }
+  }
+  return findings;
+}
+
 function check() {
   const target = resolve(flagValue('--target', '.'));
-  const srcDir = resolve(target, flagValue('--dir', 'src'));
-  if (!existsSync(srcDir)) {
-    console.error(`solid2-kit check — source directory not found: ${srcDir} (use --dir)`);
-    process.exit(2);
+  const fileArgs = positionalArgs();
+
+  let files;
+  if (fileArgs.length > 0) {
+    // Explicit file mode (used by agent hooks): check only the named sources.
+    files = fileArgs.map((file) => resolve(target, file)).filter((file) => SOURCE_FILE.test(file));
+  } else {
+    const srcDir = resolve(target, flagValue('--dir', 'src'));
+    if (!existsSync(srcDir)) {
+      console.error(`solid2-kit check — source directory not found: ${srcDir} (use --dir)`);
+      process.exit(2);
+    }
+    files = [...walk(srcDir)];
   }
 
   let findings = 0;
-  let files = 0;
-  for (const file of walk(srcDir)) {
-    files += 1;
-    const content = readFileSync(file, 'utf8');
-    const lines = content.split('\n');
-    for (const rule of CHECKS) {
-      for (const match of content.matchAll(rule.pattern)) {
-        findings += 1;
-        const lineNumber = content.slice(0, match.index).split('\n').length;
-        console.error(
-          `${relative(target, file)}:${lineNumber} [${rule.id}] ${rule.message}\n  > ${lines[lineNumber - 1].trim()}`,
-        );
-      }
+  for (const file of files) {
+    for (const finding of fileFindings(file, target)) {
+      findings += 1;
+      console.error(finding);
     }
   }
 
   if (findings > 0) {
-    console.error(`\nsolid2-kit check — ${findings} finding(s) in ${files} file(s).`);
+    console.error(`\nsolid2-kit check — ${findings} finding(s) in ${files.length} file(s).`);
     process.exit(1);
   }
-  console.log(`solid2-kit check — OK (${files} files scanned).`);
+  console.log(`solid2-kit check — OK (${files.length} files scanned).`);
+}
+
+// --- hook -------------------------------------------------------------------
+// Edit-time gate wired by `init` into the agents' hook systems. Reads the
+// hook JSON payload from stdin, runs the mechanical checks on the edited
+// source files, and feeds findings back through each agent's channel:
+//   claude — Claude Code PostToolUse: findings on stderr + exit 2 (Claude
+//            sees the stderr and fixes; other exit codes are ignored). Also
+//            handles the Stop event as a whole-project final gate: exit 2
+//            blocks the agent from ending its turn with violations in place.
+//   cursor — Cursor postToolUse: findings as {"additional_context"} JSON on
+//            stdout (injected into the conversation after the tool result).
+// Both agents also edit files through shell commands (sed, heredocs, mv,
+// codemods), which never hit the Edit/Write tools — so shell-shaped tool
+// payloads are scanned for source paths mentioned in the command and those
+// files are checked after the command ran.
+// Hooks must never break the agent loop: malformed payloads exit 0 silently.
+
+const WRITE_TOOL = /write|edit|replace|apply|patch/i;
+const SHELL_TOOL = /shell|bash|terminal|command|exec/i;
+const MAX_REPORTED = 40;
+
+function formatReport(header, findings) {
+  const shown = findings.slice(0, MAX_REPORTED);
+  const more = findings.length - shown.length;
+  return `${header}\n\n${shown.join('\n')}${more > 0 ? `\n…and ${more} more finding(s).` : ''}`;
+}
+
+function isCheckableSource(path) {
+  return SOURCE_FILE.test(path) && !path.includes('\n') && !path.includes('node_modules');
+}
+
+function collectSourcePaths(value, found = new Set()) {
+  if (typeof value === 'string') {
+    if (isCheckableSource(value) && existsSync(value)) found.add(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectSourcePaths(item, found);
+  } else if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) collectSourcePaths(item, found);
+  }
+  return found;
+}
+
+// Path-shaped tokens ending in a source extension, resolved against the
+// command's cwd. Existence filtering keeps false positives at zero.
+function collectCommandPaths(command, cwd, found = new Set()) {
+  if (typeof command !== 'string') return found;
+  for (const match of command.matchAll(/[^\s'"`;|&()<>=]+\.(?:tsx?|jsx)\b/g)) {
+    const token = match[0];
+    if (!isCheckableSource(token)) continue;
+    const path = resolve(cwd, token);
+    if (existsSync(path)) found.add(path);
+  }
+  return found;
+}
+
+// --- pre-execution guard (self-defense + proactive denial) -------------------
+// Agents that keep getting blocked by a gate tend to conclude the gate is
+// wrong and edit or delete it. Pre-execution hooks (Claude PreToolUse,
+// Cursor preToolUse / beforeShellExecution) can deny a tool call before it
+// runs, so this guard refuses:
+//   - edits/deletes of kit-owned guardrail files (rules, skill, commands,
+//     the kit itself under node_modules),
+//   - edits that would remove the kit's markers from hook configs or the
+//     AGENTS.md / CLAUDE.md managed blocks,
+//   - shell rewrites of those files (sed/rm/redirects — uninspectable),
+//   - installing dependencies doctor would flag anyway (react,
+//     vite-plugin-solid, eslint-plugin-solid, SolidStart, ...).
+// Everything else is allowed; this gate never inspects file *content* being
+// written (that is the post-edit hook's job).
+
+const GUARDRAIL_PATH =
+  /\.cursor\/rules\/solid-2\.mdc|(?:\.cursor|\.claude)\/skills\/solid-2|(?:\.cursor|\.claude)\/commands\/solid2-review\.md|node_modules\/solid2-agent-kit\//;
+const MARKER_FILE = /(?:\.claude\/settings\.json|\.cursor\/hooks\.json|AGENTS\.md|CLAUDE\.md)$/;
+const KIT_MARKER = 'solid2-agent-kit';
+const SHELL_WRITE = /\b(?:rm|mv|cp|sed|tee|truncate|unlink|chmod|perl|python[\d.]*)\b|>>?/;
+const INSTALL_CMD = /\b(?:npm|pnpm|yarn|bun)\s+(?:-\S+\s+)*(?:install|add|i)\b/;
+
+const TAMPER_MESSAGE =
+  'solid2-agent-kit guardrail: this file is kit-managed Solid 2.0 guidance/enforcement. Do not edit, weaken, or delete it — fix the flagged code instead. Kit files update via `solid2-kit sync`. If you believe the guardrail itself is wrong, or the user explicitly wants it removed, stop and tell the user.';
+
+function bannedInstall(command) {
+  if (!INSTALL_CMD.test(command)) return null;
+  for (const raw of command.split(/\s+/)) {
+    const token = raw.replace(/^['"]|['"]$/g, '');
+    const name = token.replace(/(?!^)@.*$/, '');
+    if (name in BANNED_DEPS) return name;
+  }
+  return null;
+}
+
+function preToolGate(agent, payload) {
+  const deny = (agentMessage) => {
+    if (agent === 'claude') {
+      console.error(agentMessage);
+      process.exit(2);
+    }
+    console.log(
+      JSON.stringify({
+        permission: 'deny',
+        agent_message: agentMessage,
+        user_message: 'solid2-agent-kit guardrail blocked this action.',
+      }),
+    );
+    process.exit(0);
+  };
+
+  let toolInput = payload.tool_input;
+  if (typeof toolInput === 'string') {
+    try {
+      toolInput = JSON.parse(toolInput);
+    } catch {
+      toolInput = undefined;
+    }
+  }
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
+
+  // Shell commands: beforeShellExecution carries `command` at the top level,
+  // PreToolUse(Bash) inside tool_input.
+  const command =
+    typeof payload.command === 'string'
+      ? payload.command
+      : SHELL_TOOL.test(toolName) && typeof toolInput?.command === 'string'
+        ? toolInput.command
+        : null;
+  if (command !== null) {
+    const banned = bannedInstall(command);
+    if (banned) {
+      deny(
+        `solid2-agent-kit guardrail: do not install "${banned}". ${BANNED_DEPS[banned]} (\`solid2-kit doctor\` fails on it.)`,
+      );
+    }
+    if (SHELL_WRITE.test(command)) {
+      if (GUARDRAIL_PATH.test(command)) deny(TAMPER_MESSAGE);
+      if (/(?:\.claude\/settings\.json|\.cursor\/hooks\.json)/.test(command)) {
+        deny(
+          'solid2-agent-kit guardrail: rewriting hook configs through the shell cannot be verified. Use the Edit tool (keeping the solid2-agent-kit hook entries), or ask the user.',
+        );
+      }
+    }
+    process.exit(0);
+  }
+
+  if (!WRITE_TOOL.test(toolName)) process.exit(0);
+  const filePath = typeof toolInput?.file_path === 'string' ? toolInput.file_path : toolInput?.path;
+  if (typeof filePath !== 'string') process.exit(0);
+
+  if (GUARDRAIL_PATH.test(filePath)) deny(TAMPER_MESSAGE);
+
+  if (MARKER_FILE.test(filePath)) {
+    // Editing these files is fine (users add their own hooks/sections through
+    // agents) as long as the kit's entries/managed blocks survive the edit.
+    const removalMessage = `solid2-agent-kit guardrail: this edit removes the ${KIT_MARKER} entries/managed block from ${filePath}. Keep them intact; run \`solid2-kit sync\` to update them. If the user explicitly wants the kit removed, stop and tell the user to do it.`;
+    if (typeof toolInput.content === 'string') {
+      let existing = '';
+      try {
+        existing = readFileSync(resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), filePath), 'utf8');
+      } catch {
+        // New file — nothing to preserve.
+      }
+      if (existing.includes(KIT_MARKER) && !toolInput.content.includes(KIT_MARKER)) deny(removalMessage);
+    } else if (
+      typeof toolInput.old_string === 'string' &&
+      toolInput.old_string.includes(KIT_MARKER) &&
+      !String(toolInput.new_string ?? '').includes(KIT_MARKER)
+    ) {
+      deny(removalMessage);
+    }
+  }
+
+  process.exit(0);
+}
+
+// Claude Code Stop hook: the per-edit hooks catch violations file by file,
+// but the agent can still end a turn with violations introduced through
+// uncovered paths (git operations, scripts writing files, moved code). The
+// Stop gate re-runs the whole mechanical check plus the wiring doctor and
+// refuses to let the turn end while findings remain. `stop_hook_active`
+// marks a turn that is already continuing because of this gate — allow it
+// through then, so an agent that cannot satisfy the gate never loops forever.
+function stopGate(payload) {
+  if (payload.stop_hook_active) process.exit(0);
+  const target = process.cwd();
+
+  const findings = [];
+  for (const dir of ['src', 'app', 'lib']) {
+    const abs = join(target, dir);
+    if (!existsSync(abs)) continue;
+    for (const file of walk(abs)) findings.push(...fileFindings(file, target));
+  }
+  if (existsSync(join(target, 'package.json'))) {
+    findings.push(...doctorFindings(target).map(({ id, message }) => `[${id}] ${message}`));
+  }
+  if (findings.length === 0) process.exit(0);
+
+  console.error(
+    formatReport(
+      'solid2-kit — React/Solid 1.x patterns are still in the project; fix them before finishing:',
+      findings,
+    ),
+  );
+  process.exit(2);
+}
+
+function hook(agent) {
+  if (agent !== 'claude' && agent !== 'cursor') {
+    console.error('solid2-kit hook — expected agent: claude | cursor');
+    process.exit(2);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(readFileSync(0, 'utf8'));
+  } catch {
+    process.exit(0);
+  }
+  if (!payload || typeof payload !== 'object') process.exit(0);
+
+  const event = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : '';
+  if (agent === 'claude' && event === 'Stop') stopGate(payload);
+  // Pre-execution events (PreToolUse / preToolUse / beforeShellExecution)
+  // only run the guard — never the content check (the file has not been
+  // written yet, so checking would block edits based on pre-edit state).
+  if (/^(?:pre|before)/i.test(event)) preToolGate(agent, payload);
+
+  // afterFileEdit-style payloads carry file_path at the top level; tool-use
+  // payloads carry the edited path(s) inside tool_input. Only write-shaped
+  // and shell-shaped tools are gated, so reads/searches never are.
+  const files = new Set();
+  if (typeof payload.file_path === 'string') collectSourcePaths(payload.file_path, files);
+  if (payload.tool_input !== undefined) {
+    const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
+    let toolInput = payload.tool_input;
+    if (typeof toolInput === 'string') {
+      try {
+        toolInput = JSON.parse(toolInput);
+      } catch {
+        toolInput = undefined;
+      }
+    }
+    if (toolName === '' || WRITE_TOOL.test(toolName)) {
+      collectSourcePaths(toolInput, files);
+    } else if (SHELL_TOOL.test(toolName)) {
+      const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
+      collectCommandPaths(toolInput?.command, cwd, files);
+    }
+  }
+  if (files.size === 0) process.exit(0);
+
+  const findings = [];
+  for (const file of files) {
+    try {
+      findings.push(...fileFindings(file, process.cwd()));
+    } catch {
+      // File disappeared between the edit and the hook — nothing to check.
+    }
+  }
+  if (findings.length === 0) process.exit(0);
+
+  const report = formatReport(
+    'solid2-kit check — React/Solid 1.x patterns in this edit; fix them now:',
+    findings,
+  );
+  if (agent === 'claude') {
+    console.error(report);
+    process.exit(2);
+  }
+  console.log(JSON.stringify({ additional_context: report }));
+  process.exit(0);
+}
+
+// --- doctor -----------------------------------------------------------------
+// Project-config gate: `check` covers TSX sources, `doctor` covers the wiring
+// around them — dependencies, tsconfig, and root config files — where agents
+// also reach for React / Solid 1.x tooling (vite-plugin-solid,
+// eslint-plugin-solid, jsxImportSource: "solid-js", ...).
+
+const BANNED_DEPS = {
+  react: 'React does not belong in a Solid 2.0 project.',
+  'react-dom': 'React does not belong in a Solid 2.0 project.',
+  next: 'Next.js does not belong in a Solid 2.0 project.',
+  'vite-plugin-solid': 'Solid 1.x Vite plugin. Use @solidjs/vite-plugin.',
+  'eslint-plugin-solid':
+    'Built for Solid 1.x; its analyzer misreads Solid 2 idioms (two-phase createEffect, writable derivations, draft setters). Remove it — solid2-kit check carries the still-valid intents.',
+  '@solidjs/start': 'SolidStart 1.x. Solid 2 start mode lives in @solidjs/vite-plugin (start: true).',
+  'solid-start': 'SolidStart 0.x. Solid 2 start mode lives in @solidjs/vite-plugin (start: true).',
+  'solid-app-router': 'Pre-1.0 router. Use @solidjs/router 2 (createRouter({ routes })).',
+  vinxi: 'SolidStart 1.x toolchain. Solid 2 uses @solidjs/vite-plugin directly.',
+};
+
+const CONFIG_SOURCE = /\.(?:m|c)?[jt]s$/;
+
+// Files installed by this kit that carry a version marker. When the kit
+// dependency is updated but `sync` is not re-run, the installed guidance
+// keeps teaching agents the older content — silent drift doctor can catch.
+const GUIDANCE_FILES = ['.cursor/rules/solid-2.mdc', 'CLAUDE.md', 'AGENTS.md'];
+
+function doctorFindings(target) {
+  const findings = [];
+  const report = (id, message) => findings.push({ id, message });
+
+  const pkg = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  for (const [name, message] of Object.entries(BANNED_DEPS)) {
+    if (name in deps) report(`dep-${name.replace(/[@/]/g, '')}`, `package.json depends on "${name}". ${message}`);
+  }
+  const solidRange = deps['solid-js'];
+  if (typeof solidRange === 'string' && /^[\s^~=v]*[01]\./.test(solidRange)) {
+    report('solid-js-version', `package.json pins solid-js "${solidRange}" — this kit teaches Solid 2.x; upgrade to ^2.`);
+  }
+
+  for (const entry of readdirSync(target, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(target, entry.name);
+
+    if (/^tsconfig.*\.json$/.test(entry.name)) {
+      // tsconfig is JSONC; extract the two relevant keys with regexes.
+      const content = readFileSync(path, 'utf8');
+      const jsx = content.match(/"jsx"\s*:\s*"([^"]+)"/)?.[1];
+      if (jsx && jsx !== 'preserve') {
+        report('tsconfig-jsx', `${entry.name} sets "jsx": "${jsx}". Solid 2 compiles its own JSX: use "preserve".`);
+      }
+      const importSource = content.match(/"jsxImportSource"\s*:\s*"([^"]+)"/)?.[1];
+      if (importSource && importSource !== '@solidjs/web') {
+        report(
+          'tsconfig-jsx-import-source',
+          `${entry.name} sets "jsxImportSource": "${importSource}". Solid 2 JSX types live in "@solidjs/web".`,
+        );
+      }
+      continue;
+    }
+
+    if (CONFIG_SOURCE.test(entry.name)) {
+      const content = readFileSync(path, 'utf8');
+      if (/['"]vite-plugin-solid['"]/.test(content)) {
+        report('config-vite-plugin-solid', `${entry.name} references vite-plugin-solid (Solid 1.x). Import solid from "@solidjs/vite-plugin".`);
+      }
+      if (/jsxImportSource['"]?\s*[:=]\s*['"](?:solid-js|react)['"]/.test(content)) {
+        report('config-jsx-import-source', `${entry.name} sets jsxImportSource to solid-js/react. Solid 2 uses "@solidjs/web".`);
+      }
+    }
+
+    if (/^(?:\.eslintrc|eslint\.config\.)/.test(entry.name)) {
+      const content = readFileSync(path, 'utf8');
+      if (content.includes('eslint-plugin-solid')) {
+        report('eslint-plugin-solid', `${entry.name} wires eslint-plugin-solid (Solid 1.x analyzer; false-positives on Solid 2 idioms). Remove it.`);
+      }
+    }
+  }
+
+  for (const guidance of GUIDANCE_FILES) {
+    const path = join(target, guidance);
+    if (!existsSync(path)) continue;
+    const installed = readFileSync(path, 'utf8').match(/solid2-agent-kit v(\d[\w.-]*)/)?.[1];
+    if (installed && installed !== VERSION) {
+      report(
+        'stale-guidance',
+        `${guidance} was installed by solid2-agent-kit v${installed} but v${VERSION} is running — run \`solid2-kit sync\` so agents read current guidance.`,
+      );
+    }
+  }
+
+  return findings;
+}
+
+function doctor() {
+  const target = resolve(flagValue('--target', '.'));
+  if (!existsSync(join(target, 'package.json'))) {
+    console.error(`solid2-kit doctor — no package.json at ${target} (use --target)`);
+    process.exit(2);
+  }
+
+  const findings = doctorFindings(target);
+  for (const { id, message } of findings) console.error(`[${id}] ${message}`);
+
+  if (findings.length > 0) {
+    console.error(`\nsolid2-kit doctor — ${findings.length} finding(s). Fix the project wiring above.`);
+    process.exit(1);
+  }
+  console.log('solid2-kit doctor — OK (dependencies, tsconfig, root configs, and installed guidance look like Solid 2).');
 }
 
 // --- entry ------------------------------------------------------------------
@@ -420,15 +1004,23 @@ switch (command) {
   case 'check':
     check();
     break;
+  case 'doctor':
+    doctor();
+    break;
+  case 'hook':
+    hook(args[1]);
+    break;
   default:
     console.log(
       [
         `solid2-agent-kit v${VERSION}`,
         '',
         'Usage:',
-        '  solid2-kit init  [--cursor] [--claude] [--target <dir>]  install/update guidance (default: both tools)',
-        '  solid2-kit sync  [--cursor] [--claude] [--target <dir>]  alias of init (idempotent)',
-        '  solid2-kit check [--dir <srcdir>] [--target <dir>]       mechanical React/Solid 1.x pattern gate (default dir: src)',
+        '  solid2-kit init  [--cursor] [--claude] [--no-hooks] [--target <dir>]  install/update guidance + edit hooks (default: both tools)',
+        '  solid2-kit sync  [--cursor] [--claude] [--no-hooks] [--target <dir>]  alias of init (idempotent)',
+        '  solid2-kit check [--dir <srcdir>] [--target <dir>] [files...]         mechanical React/Solid 1.x pattern gate (default dir: src)',
+        '  solid2-kit doctor [--target <dir>]                                    project-wiring gate: deps, tsconfig, root configs',
+        '  solid2-kit hook (claude|cursor)                                       edit-time gate for agent hooks (stdin: hook JSON payload)',
       ].join('\n'),
     );
     process.exit(command ? 2 : 0);

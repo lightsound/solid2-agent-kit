@@ -529,6 +529,10 @@ test('increments on click', () => {
 `jsxImportSource` for tests and app code is `"@solidjs/web"`, not `"solid-js"`.
 Vite plugin is `@solidjs/vite-plugin`, not `vite-plugin-solid`.
 
+To turn those dev diagnostics into a hard gate, patch `console.warn` in the test setup
+file to rethrow unexpected warnings — then any top-level reactive read or unowned write
+an agent sneaks in fails the suite instead of scrolling by.
+
 ## App stack (only if the project has these packages)
 
 This kit's always-applied rules cover `solid-js` + `@solidjs/web` TSX. Official
@@ -944,4 +948,5 @@ always-applied rules installed alongside this skill.
 - [ ] `jsxImportSource` is `@solidjs/web`; Vite plugin is `@solidjs/vite-plugin`.
       No `@solidjs/start`, `vinxi`, `"use client"`, or Next.js imports.
 - [ ] Single return per component; no early returns on reactive conditions.
-- [ ] `solid2-kit check` and the project's typecheck pass.
+- [ ] `solid2-kit check` and the project's typecheck pass; `solid2-kit doctor` too if
+      `package.json`, tsconfig, or root config files changed.

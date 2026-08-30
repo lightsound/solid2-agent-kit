@@ -67,4 +67,27 @@ if (missing.length > 0) {
   fail(`violation fixtures did not report: ${missing.join(', ')}`, violations);
 }
 
-console.log(`check fixtures — OK (clean passed; violations reported ${expected.join(', ')})`);
+// .jsx sources are gated like .tsx ones.
+if (!output.includes('legacy.jsx')) {
+  fail('expected violations in the .jsx fixture to be reported', violations);
+}
+
+// Explicit file mode: `check [files...]` gates only the named sources.
+const singleBad = spawnSync(
+  process.execPath,
+  [kit, 'check', join(root, 'tests/fixtures/violations/bad.tsx')],
+  { encoding: 'utf8' },
+);
+if (singleBad.status !== 1 || !singleBad.stderr.includes('[react-import]')) {
+  fail('expected file-mode check to fail on the violations fixture', singleBad);
+}
+const singleClean = spawnSync(
+  process.execPath,
+  [kit, 'check', join(root, 'tests/fixtures/clean/app.tsx')],
+  { encoding: 'utf8' },
+);
+if (singleClean.status !== 0) {
+  fail('expected file-mode check to pass on a clean fixture', singleClean);
+}
+
+console.log(`check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; file mode gated a single file)`);
