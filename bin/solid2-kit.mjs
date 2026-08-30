@@ -183,9 +183,9 @@ const CHECKS = [
   {
     id: 'solid1-api',
     pattern:
-      /(?<![.\w])(?:createResource|onMount|createMutable|modifyMutable|mergeProps|splitProps|produce|unwrap|createComputed|createSelector|createDeferred|startTransition|batch)\s*\(/g,
+      /(?<![.\w])(?:createResource|onMount|createMutable|modifyMutable|mergeProps|splitProps|produce|unwrap|createComputed|createSelector|createDeferred|startTransition|batch|onError|catchError|createDynamic|renderToStringAsync|clearDelegatedEvents)\s*\(/g,
     message:
-      'Removed Solid 1.x API. Replacements: async createMemo, onSettled, createStore drafts, merge/omit/snapshot, automatic batching.',
+      'Removed Solid 1.x API. Replacements: async createMemo, onSettled, createStore drafts, merge/omit/snapshot, automatic batching, Errored, dynamic(), renderToStream.',
   },
   {
     id: 'solid1-component',
@@ -225,6 +225,33 @@ const CHECKS = [
     pattern: /\[\s*(?:is)?[Ll]oading\s*,|\bset(?:Is)?Loading\s*\(/g,
     message:
       'Hand-rolled loading state. First-load UI belongs to a <Loading> fallback, refetch indicators to isPending(), in-flight values to latest(). Model the async work as a computation (promise / async iterable), not signals.',
+  },
+  {
+    id: 'react-lazy',
+    pattern: /\bReact\.lazy\s*\(/g,
+    message: 'React.lazy. Use `lazy(() => import("./X"))` from "solid-js" and read it under <Loading>.',
+  },
+  {
+    id: 'vite-plugin-solid',
+    pattern: /from\s+['"]vite-plugin-solid['"]/g,
+    message: 'Solid 1.x Vite plugin. Import `solid` from "@solidjs/vite-plugin".',
+  },
+  {
+    id: 'solid1-jsx-namespace',
+    pattern: /\b(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*=/g,
+    message:
+      'Solid 1.x JSX namespace. Use ref callbacks (and directive factories), camelCase event props, and standard attributes.',
+  },
+  {
+    id: 'solid1-router',
+    pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate)\b/g,
+    message:
+      'Solid Router 0.x/1.x JSX. Define routes with createRouter({ routes }) and plain <a href={Router.paths...}>.',
+  },
+  {
+    id: 'meta-provider',
+    pattern: /<MetaProvider\b/g,
+    message: 'Solid Meta 1.x has no provider. Render <Title>/<Meta>/<Link> from "@solidjs/meta" anywhere.',
   },
   {
     // A zero-arg call compared against undefined/null is a manual async

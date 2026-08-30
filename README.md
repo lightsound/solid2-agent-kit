@@ -13,10 +13,10 @@ Supported agents: **Cursor** and **Claude Code**.
 
 | Layer | Cursor | Claude Code | Role |
 |---|---|---|---|
-| Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 22 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
-| Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables (state placement, effect-or-not), canonical patterns verified against official docs, review checklist, official-doc URL index |
+| Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 23 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
+| Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables (state placement, effect-or-not, composition/SSR), canonical patterns verified against official docs, review checklist, official-doc URL index (core + optional router / server functions / meta) |
 | Shared agent context | managed block in `AGENTS.md` | same (Claude Code users can reference it from `CLAUDE.md`) | Core principles and pointers, always in context |
-| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}`: fails on props destructuring (including multi-line signatures), React imports/hooks/JSX props, Solid 1.x imports/APIs/components, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, and `=== undefined` readiness branches |
+| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}`: fails on props destructuring (including multi-line signatures), React imports/hooks/JSX props/`React.lazy`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<HashRouter>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, and `=== undefined` readiness branches |
 
 Managed blocks are delimited with `<!-- solid2-agent-kit:*:start/end -->` markers; everything
 outside them is yours. Kit-owned files (`solid-2.mdc`, the skill directories) are overwritten
@@ -77,7 +77,8 @@ the kit content, the rest come from an explicit list in `scripts/check-docs-drif
 Matching requires code-like contexts (backticked, import/JSX position, or a call), so
 common-word APIs such as `merge` or `action` cannot pass on prose alone. If Solid renames or
 removes an API, the job fails and the kit content gets fixed before it teaches agents stale
-names.
+names. The same workflow runs `tests/check.test.mjs` so the mechanical gate's new patterns
+keep matching.
 
 Note: the canonical docs site https://v2.solidjs.com/ sits behind bot protection, so the kit
 (and the guidance it installs) points agents at the official markdown mirror
@@ -92,6 +93,7 @@ files/shared/rules-body.md         hard rules (rendered into .mdc and CLAUDE.md)
 files/shared/agents-section.md     AGENTS.md managed-block content
 files/skills/solid-2/              SKILL.md + references/official-docs.md
 scripts/check-docs-drift.mjs       weekly docs cross-check
+tests/                             mechanical-gate fixtures (`npm test`)
 ```
 
 ## License

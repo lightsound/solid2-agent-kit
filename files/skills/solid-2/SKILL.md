@@ -57,6 +57,20 @@ Most React `useEffect` code should NOT become `createEffect`:
 | Sync one state into another | delete the second state; derive it |
 | Push a settled reactive value into a non-Solid system (DOM API, third-party widget, analytics, subscription) | `createEffect(compute, apply)` — this is the only real use |
 | One-time setup after mount (`onMount`) | `onSettled(() => { ...; return cleanup })` |
+| Measure DOM / observe size after paint | ref **directive factory** + `onSettled` (writes a *new* input; not an effect that copies state) |
+
+### Composition, code-splitting, SSR
+
+| Situation | Use |
+|---|---|
+| Wrapper that only renders its children | `{props.children}` — no helper |
+| Inspect, count, or iterate children | `children(() => props.children)` then `.toArray()` |
+| Code-split a component | `lazy(() => import("./X"))` read under `<Loading>` |
+| Named export from a lazy module | `lazy(() => import("./pages"), { export: "About" })` |
+| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity) |
+| Browser-only widget (charts, maps, `window`) | `clientOnly(() => import("./Chart"))` from `@solidjs/web` |
+| Server vs browser branch | `isServer` / `isDev` from `@solidjs/web` (build-time constants), not `typeof window` |
+| SSR-stable `id` / `for` / `aria-*` pairing | `createUniqueId()` |
 
 ## Canonical patterns
 
@@ -96,7 +110,11 @@ const full = () => `${props.first} ${props.last}`;
 ```
 
 To merge defaults or split props reactively use `merge` / `omit` from `solid-js`
-(replacements for Solid 1.x `mergeProps` / `splitProps`).
+(replacements for Solid 1.x `mergeProps` / `splitProps`). `merge` is like
+`Object.assign`: an explicit `undefined` **overrides** the previous source.
+Omitted keys still fall through, so `merge({ type: "button" }, props)` is the
+usual defaults pattern. That is not Solid 1 `mergeProps`, which ignored
+`undefined`.
 
 ### Store updates (draft mutation)
 
@@ -122,6 +140,61 @@ subscribers under the path re-run and row identity is lost. In order of preferen
 
 Plain non-reactive copy for logging/serialization/`structuredClone`: `snapshot(store)`.
 Subscribe an effect compute to every nested change: `deep(store)`.
+
+### Children: pass through, or resolve with `children()`
+
+Most wrappers just render `props.children`. Use the `children` helper only when
+the component must **inspect or iterate** them. It returns an accessor with
+`.toArray()`. The helper call belongs in the component body; the read of
+`props.children` is inside the accessor (a tracking scope), so this is not a
+setup-time snapshot. Do not assign `const kids = props.children` and do not
+treat resolved children as a reactive data list for `<For>`:
+
+```tsx
+import { children, type ParentProps } from 'solid-js';
+
+function Stack(props: ParentProps) {
+  const resolved = children(() => props.children);
+  return <div class="stack">{resolved.toArray()}</div>;
+}
+```
+
+### Code-splitting: `lazy` + `<Loading>`
+
+```tsx
+import { lazy, Loading } from 'solid-js';
+
+const Profile = lazy(() => import('./Profile'));
+const About = lazy(() => import('./pages'), { export: 'About' });
+
+<Loading fallback={<Spinner />}>
+  <Profile id="42" />
+</Loading>
+
+<button type="button" onMouseEnter={() => Profile.preload()}>Open profile</button>
+```
+
+Never `React.lazy` / `<Suspense>`. The lazy component suspends through
+`<Loading>` on first render; `.preload()` starts the import early.
+
+### Dynamic component: `dynamic()` (canonical)
+
+```tsx
+import { createSignal, type Component } from 'solid-js';
+import { dynamic } from '@solidjs/web';
+
+const Compact: Component<{ value: string }> = (props) => <span>{props.value}</span>;
+const Detailed: Component<{ value: string }> = (props) => <strong>{props.value}</strong>;
+
+const [detailed, setDetailed] = createSignal(false);
+const Result = dynamic(() => (detailed() ? Detailed : Compact));
+
+<Result value="Current result" />
+```
+
+`dynamic()` returns a **stable** component whose source can be a component, an
+intrinsic tag name, a promise, or empty. Prefer it over swapping a component
+variable in JSX. `<Dynamic>` is the JSX spelling of the same primitive.
 
 ### Two-phase effect (imperative boundary only)
 
@@ -340,20 +413,41 @@ fine-grained updates flow through the signals inside it.
 ### Refs
 
 ```tsx
-import type { Ref } from 'solid-js';
+import { onSettled, type Ref } from 'solid-js';
 
-function SearchField(props: { ref?: Ref<HTMLInputElement> }) {
+function listen(type: string, handler: EventListener, options?: AddEventListenerOptions) {
+  let element: HTMLElement | undefined;
+  onSettled(() => {
+    const target = element;
+    if (!target) return;
+    target.addEventListener(type, handler, options);
+    return () => target.removeEventListener(type, handler, options);
+  });
+  return (next: HTMLElement) => { element = next; };
+}
+
+function SearchField(props: { ref?: Ref<HTMLInputElement>; onInput: EventListener }) {
   let input!: HTMLInputElement;
   return (
     <>
-      <input ref={[props.ref, (el) => (input = el)]} type="search" />
-      <button onClick={() => input.select()}>Select</button>
+      <input
+        ref={[props.ref, (el) => (input = el), listen('input', props.onInput, { passive: true })]}
+        type="search"
+      />
+      <button type="button" onClick={() => input.select()}>Select</button>
     </>
   );
 }
 ```
 
 Ref arrays flatten recursively; each callback runs in order. No `forwardRef` needed.
+
+**Ref callbacks run untracked and without an owner.** Their return values are
+ignored — do not create effects, memos, or `onCleanup` inside the callback, and
+do not `return () => cleanup`. Put owned setup in a **directive factory** (like
+`listen` above) and return only the element callback. Use this for
+`ResizeObserver`, third-party widgets, and native listener options (`capture` /
+`passive`) — Solid event props do not take those options.
 
 ## Scheduling and tests
 
@@ -369,6 +463,112 @@ expect(count()).toBe(2);
 Wait for an async expression to settle in tests: `await resolve(() => value())`.
 Run tests in dev mode first — Solid 2 emits diagnostics for top-level reactive reads,
 writes from owned scopes, and async reads outside `<Loading>`. Fix them; don't suppress.
+
+Component tests use `@solidjs/testing-library`. Pass a **function** to `render` so
+the tree has an owner, and `flush()` after interactions that stage writes:
+
+```tsx
+import { cleanup, fireEvent, render } from '@solidjs/testing-library';
+import { flush } from 'solid-js';
+import { afterEach, expect, test } from 'vitest';
+
+afterEach(cleanup);
+
+test('increments on click', () => {
+  const { getByRole } = render(() => <Counter />);
+  const button = getByRole('button');
+  fireEvent.click(button);
+  flush();
+  expect(button).toHaveTextContent('Clicks: 1');
+});
+```
+
+`jsxImportSource` for tests and app code is `"@solidjs/web"`, not `"solid-js"`.
+Vite plugin is `@solidjs/vite-plugin`, not `vite-plugin-solid`.
+
+## App stack (only if the project has these packages)
+
+This kit's always-applied rules cover `solid-js` + `@solidjs/web` TSX. Official
+Solid 2 docs also describe optional app layers. **If those packages are in the
+project, use them — do not invent Next.js, React Router, SolidStart 1.x, or
+Solid Router 0.x/1.x stand-ins.** Patterns below; fetch the matching pages from
+[references/official-docs.md](references/official-docs.md).
+
+### Compiler / packages
+
+```json
+{ "compilerOptions": { "jsx": "preserve", "jsxImportSource": "@solidjs/web" } }
+```
+
+Import DOM `JSX` types from `@solidjs/web`; renderer-neutral `Component` /
+`ParentProps` from `solid-js`. Vite: `import solid from "@solidjs/vite-plugin"`
+with `start: true` / `ssr: true` / `serverFunctions: true` only when the
+project already uses start mode. Tiers are `bare` → `basic` (router) →
+`fullstack` (SSR + server functions); do not jump a tier without cause.
+
+### Solid Router 2 — `createRouter`, not JSX `<Route>`
+
+```tsx
+import { lazy } from 'solid-js';
+import { createRouter } from '@solidjs/router';
+
+export const Router = createRouter({
+  routes: [
+    { path: '/', component: lazy(() => import('./pages/Home')) },
+    { path: '/about', component: lazy(() => import('./pages/About')) },
+    { path: '*404', component: lazy(() => import('./pages/NotFound')) },
+  ],
+});
+export const { paths } = Router;
+
+export default function App() {
+  return (
+    <Router>
+      {(props) => (
+        <>
+          <a href={Router.paths()}>Home</a>
+          <main>{props.children}</main>
+        </>
+      )}
+    </Router>
+  );
+}
+```
+
+Create the instance at **module scope**. Nested layouts are `children` arrays
+on the route objects, not nested `<Route>` / nested routers. Navigate with
+plain `<a href={Router.paths.about}>` (or `useNavigate`); there is no `<A>` /
+`<Navigate>` / `<HashRouter>`. Session location is `useLocation` / `useParams`,
+not `Router.paths`. One router per app.
+
+### Server functions — `"use server"`
+
+```ts
+export async function findUser(id: string) {
+  'use server';
+  // validate `id`; read identity from getRequestEvent(), never from arguments
+  return database.users.find(id);
+}
+```
+
+A function-level server function cannot close over component locals — pass
+values as arguments. Treat every argument as untrusted. During SSR the same
+reference runs in-process; in the browser it is HTTP. Mutations that should
+revalidate: `redirect` / `reload` from `@solidjs/web` (see the server-function
+guides). For 404 during SSR: `httpStatus(404)` from `@solidjs/web`.
+
+### Document head — no MetaProvider
+
+```tsx
+import { Title, Link, Meta } from '@solidjs/meta';
+
+<Title>Page title</Title>
+<Meta name="description" content="..." />
+```
+
+Solid Meta 1.x has **no provider**. Render tags anywhere; later wins, unmount
+restores. `useHead` from `@solidjs/web` is the lower-level registry. Do not
+hardcode a second `<title>` in the document shell.
 
 ## Checking the official docs
 
@@ -402,5 +602,10 @@ always-applied rules installed alongside this skill.
       `reconcile`), never wholesale draft assignment.
 - [ ] Input filters write back to the DOM on reject (inputs do not rewind).
 - [ ] No Solid 1.x imports or APIs (`solid-js/store`, `createResource`, `onMount`, `Suspense`, ...).
+- [ ] Inspect children with `children()`; code-split with `lazy` + `<Loading>`; reactive
+      component choice with `dynamic()`. No `React.lazy`, no effects inside ref callbacks.
+- [ ] Browser-only code uses `isServer` / `clientOnly`, not `typeof window`.
+- [ ] If the project has a router: `createRouter({ routes })`, not JSX `<Route>` / `<A>`.
+- [ ] `jsxImportSource` is `@solidjs/web`; Vite plugin is `@solidjs/vite-plugin`.
 - [ ] Single return per component; no early returns on reactive conditions.
 - [ ] `solid2-kit check` and the project's typecheck pass.
