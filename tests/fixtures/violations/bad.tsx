@@ -1,5 +1,6 @@
 import { lazy } from 'react';
 import { onError, catchError, createDynamic, renderToStringAsync, clearDelegatedEvents } from 'solid-js';
+import type { Accessor, JSX } from 'solid-js';
 import { Route, HashRouter, Navigate } from '@solidjs/router';
 import { GET } from '@solidjs/start';
 import { createAsync } from '@solidjs/router';

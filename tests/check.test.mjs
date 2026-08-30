@@ -61,6 +61,8 @@ const expected = [
   'history-nav',
   'pending-accessor-call',
   'dynamic-jsx',
+  'jsx-namespace-import',
+  'effect-sync-signal',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {
@@ -70,6 +72,12 @@ if (missing.length > 0) {
 // .jsx sources are gated like .tsx ones.
 if (!output.includes('legacy.jsx')) {
   fail('expected violations in the .jsx fixture to be reported', violations);
+}
+
+// Both sole-setter apply shapes (block body with if-guard, expression body).
+const effectSyncHits = [...output.matchAll(/effect-sync\.tsx:\d+ \[effect-sync-signal\]/g)].length;
+if (effectSyncHits !== 2) {
+  fail(`expected 2 effect-sync-signal findings in effect-sync.tsx, saw ${effectSyncHits}`, violations);
 }
 
 // Explicit file mode: `check [files...]` gates only the named sources.
