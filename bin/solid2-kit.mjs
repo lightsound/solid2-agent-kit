@@ -114,42 +114,60 @@ function writeJsonConfig(filePath, config) {
   return filePath;
 }
 
-// Cursor postToolUse hook: on every write-shaped tool call, `hook cursor`
-// checks the edited sources and injects findings as additional_context.
+// Replace the existing kit-owned entry (identified by the marker in its
+// command) or append a fresh one — sync then updates matchers/commands that
+// changed between kit versions while leaving user entries untouched.
+function upsertHookEntry(entries, marker, entry, matches) {
+  const index = entries.findIndex((existing) => matches(existing, marker));
+  if (index === -1) entries.push(entry);
+  else entries[index] = entry;
+}
+
+const cursorEntryMatches = (entry, marker) =>
+  typeof entry?.command === 'string' && entry.command.includes(marker);
+const claudeEntryMatches = (entry, marker) =>
+  (entry?.hooks ?? []).some((item) => typeof item?.command === 'string' && item.command.includes(marker));
+
+// Cursor postToolUse hook: on every write- or shell-shaped tool call,
+// `hook cursor` checks the touched sources and injects findings as
+// additional_context.
 function upsertCursorHook(target) {
   const filePath = join(target, '.cursor/hooks.json');
   const config = readJsonConfig(filePath);
   if (config === null) return null;
   config.version ??= 1;
   config.hooks ??= {};
-  const entries = (config.hooks.postToolUse ??= []);
-  const command = `node ${KIT_LOCAL_BIN} hook cursor`;
-  if (!entries.some((entry) => typeof entry?.command === 'string' && entry.command.includes('solid2-kit.mjs hook cursor'))) {
-    entries.push({ command });
-  }
+  upsertHookEntry(
+    (config.hooks.postToolUse ??= []),
+    'solid2-kit.mjs hook cursor',
+    { command: `node ${KIT_LOCAL_BIN} hook cursor` },
+    cursorEntryMatches,
+  );
   return writeJsonConfig(filePath, config);
 }
 
-// Claude Code PostToolUse hook: `hook claude` prints findings to stderr and
-// exits 2, which Claude Code feeds back into the model as correction context.
+// Claude Code hooks: PostToolUse (`hook claude` prints findings to stderr and
+// exits 2, which Claude Code feeds back into the model as correction context;
+// Bash is matched so shell edits via sed/heredocs are gated too) and Stop
+// (whole-project final gate — the agent cannot end its turn with findings).
 function upsertClaudeHook(target) {
   const filePath = join(target, '.claude/settings.json');
   const config = readJsonConfig(filePath);
   if (config === null) return null;
   config.hooks ??= {};
-  const entries = (config.hooks.PostToolUse ??= []);
   const command = `node ${KIT_LOCAL_BIN} hook claude`;
-  const alreadyWired = entries.some((entry) =>
-    (entry?.hooks ?? []).some(
-      (item) => typeof item?.command === 'string' && item.command.includes('solid2-kit.mjs hook claude'),
-    ),
+  upsertHookEntry(
+    (config.hooks.PostToolUse ??= []),
+    'solid2-kit.mjs hook claude',
+    { matcher: 'Edit|MultiEdit|Write|Bash', hooks: [{ type: 'command', command, timeout: 30 }] },
+    claudeEntryMatches,
   );
-  if (!alreadyWired) {
-    entries.push({
-      matcher: 'Edit|MultiEdit|Write',
-      hooks: [{ type: 'command', command, timeout: 30 }],
-    });
-  }
+  upsertHookEntry(
+    (config.hooks.Stop ??= []),
+    'solid2-kit.mjs hook claude',
+    { hooks: [{ type: 'command', command, timeout: 60 }] },
+    claudeEntryMatches,
+  );
   return writeJsonConfig(filePath, config);
 }
 
@@ -171,6 +189,7 @@ function init() {
 
   const rulesBody = readFileSync(join(KIT_ROOT, 'files/shared/rules-body.md'), 'utf8');
   const agentsSection = readFileSync(join(KIT_ROOT, 'files/shared/agents-section.md'), 'utf8');
+  const reviewCommand = readFileSync(join(KIT_ROOT, 'files/commands/solid2-review.md'), 'utf8');
   const written = [];
 
   if (wantCursor) {
@@ -188,10 +207,12 @@ function init() {
     ].join('\n');
     written.push(writeKitOwnedFile(join(target, '.cursor/rules/solid-2.mdc'), mdc));
     written.push(copySkill(join(target, '.cursor/skills/solid-2')));
+    written.push(writeKitOwnedFile(join(target, '.cursor/commands/solid2-review.md'), reviewCommand));
   }
 
   if (wantClaude) {
     written.push(copySkill(join(target, '.claude/skills/solid-2')));
+    written.push(writeKitOwnedFile(join(target, '.claude/commands/solid2-review.md'), reviewCommand));
     // Claude Code has no glob-attached rules mechanism; CLAUDE.md is always
     // loaded, so the full rules body lives there in a managed block.
     written.push(
@@ -422,8 +443,59 @@ const CHECKS = [
   },
 ];
 
-// .ts / .tsx sources, excluding .d.ts declaration files.
-const SOURCE_FILE = /(?<!\.d)\.tsx?$/;
+// .ts / .tsx / .jsx sources, excluding .d.ts declaration files.
+const SOURCE_FILE = /(?<!\.d)\.(?:tsx?|jsx)$/;
+
+// Blank comment interiors (preserving newlines and offsets) so banned tokens
+// mentioned in comments ("migrated off createResource") do not trip the gate.
+// String and template contents are preserved — some checks match string
+// literals ("use client"). This is a heuristic scanner, not a JS lexer: a
+// regex literal containing escaped slashes or `//` in JSX text can blank the
+// remainder of that one line (false negatives only, never false positives).
+function stripComments(content) {
+  let out = '';
+  let state = 'code';
+  for (let i = 0; i < content.length; i += 1) {
+    const ch = content[i];
+    const next = content[i + 1];
+    if (state === 'code') {
+      if (ch === '/' && (next === '/' || next === '*')) {
+        state = next === '/' ? 'line' : 'block';
+        out += '  ';
+        i += 1;
+      } else {
+        if (ch === "'") state = 'single';
+        else if (ch === '"') state = 'double';
+        else if (ch === '`') state = 'template';
+        out += ch;
+      }
+    } else if (state === 'line') {
+      if (ch === '\n') state = 'code';
+      out += ch === '\n' ? ch : ' ';
+    } else if (state === 'block') {
+      if (ch === '*' && next === '/') {
+        state = 'code';
+        out += '  ';
+        i += 1;
+      } else {
+        out += ch === '\n' ? ch : ' ';
+      }
+    } else {
+      out += ch;
+      if (ch === '\\') {
+        out += next ?? '';
+        i += 1;
+      } else if (
+        (state === 'single' && ch === "'") ||
+        (state === 'double' && ch === '"') ||
+        (state === 'template' && ch === '`')
+      ) {
+        state = 'code';
+      }
+    }
+  }
+  return out;
+}
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -434,9 +506,12 @@ function* walk(dir) {
 }
 
 // One formatted finding per pattern match: "path:line [id] message\n  > source".
+// Patterns run against comment-stripped content (same offsets); the quoted
+// source line comes from the original file.
 function fileFindings(file, relativeTo) {
-  const content = readFileSync(file, 'utf8');
-  const lines = content.split('\n');
+  const raw = readFileSync(file, 'utf8');
+  const content = stripComments(raw);
+  const lines = raw.split('\n');
   const findings = [];
   for (const rule of CHECKS) {
     for (const match of content.matchAll(rule.pattern)) {
@@ -486,29 +561,84 @@ function check() {
 // hook JSON payload from stdin, runs the mechanical checks on the edited
 // source files, and feeds findings back through each agent's channel:
 //   claude — Claude Code PostToolUse: findings on stderr + exit 2 (Claude
-//            sees the stderr and fixes; other exit codes are ignored).
+//            sees the stderr and fixes; other exit codes are ignored). Also
+//            handles the Stop event as a whole-project final gate: exit 2
+//            blocks the agent from ending its turn with violations in place.
 //   cursor — Cursor postToolUse: findings as {"additional_context"} JSON on
 //            stdout (injected into the conversation after the tool result).
+// Both agents also edit files through shell commands (sed, heredocs, mv,
+// codemods), which never hit the Edit/Write tools — so shell-shaped tool
+// payloads are scanned for source paths mentioned in the command and those
+// files are checked after the command ran.
 // Hooks must never break the agent loop: malformed payloads exit 0 silently.
 
 const WRITE_TOOL = /write|edit|replace|apply|patch/i;
+const SHELL_TOOL = /shell|bash|terminal|command|exec/i;
+const MAX_REPORTED = 40;
+
+function formatReport(header, findings) {
+  const shown = findings.slice(0, MAX_REPORTED);
+  const more = findings.length - shown.length;
+  return `${header}\n\n${shown.join('\n')}${more > 0 ? `\n…and ${more} more finding(s).` : ''}`;
+}
+
+function isCheckableSource(path) {
+  return SOURCE_FILE.test(path) && !path.includes('\n') && !path.includes('node_modules');
+}
 
 function collectSourcePaths(value, found = new Set()) {
   if (typeof value === 'string') {
-    if (
-      SOURCE_FILE.test(value) &&
-      !value.includes('\n') &&
-      !value.includes('node_modules') &&
-      existsSync(value)
-    ) {
-      found.add(value);
-    }
+    if (isCheckableSource(value) && existsSync(value)) found.add(value);
   } else if (Array.isArray(value)) {
     for (const item of value) collectSourcePaths(item, found);
   } else if (value && typeof value === 'object') {
     for (const item of Object.values(value)) collectSourcePaths(item, found);
   }
   return found;
+}
+
+// Path-shaped tokens ending in a source extension, resolved against the
+// command's cwd. Existence filtering keeps false positives at zero.
+function collectCommandPaths(command, cwd, found = new Set()) {
+  if (typeof command !== 'string') return found;
+  for (const match of command.matchAll(/[^\s'"`;|&()<>=]+\.(?:tsx?|jsx)\b/g)) {
+    const token = match[0];
+    if (!isCheckableSource(token)) continue;
+    const path = resolve(cwd, token);
+    if (existsSync(path)) found.add(path);
+  }
+  return found;
+}
+
+// Claude Code Stop hook: the per-edit hooks catch violations file by file,
+// but the agent can still end a turn with violations introduced through
+// uncovered paths (git operations, scripts writing files, moved code). The
+// Stop gate re-runs the whole mechanical check plus the wiring doctor and
+// refuses to let the turn end while findings remain. `stop_hook_active`
+// marks a turn that is already continuing because of this gate — allow it
+// through then, so an agent that cannot satisfy the gate never loops forever.
+function stopGate(payload) {
+  if (payload.stop_hook_active) process.exit(0);
+  const target = process.cwd();
+
+  const findings = [];
+  for (const dir of ['src', 'app', 'lib']) {
+    const abs = join(target, dir);
+    if (!existsSync(abs)) continue;
+    for (const file of walk(abs)) findings.push(...fileFindings(file, target));
+  }
+  if (existsSync(join(target, 'package.json'))) {
+    findings.push(...doctorFindings(target).map(({ id, message }) => `[${id}] ${message}`));
+  }
+  if (findings.length === 0) process.exit(0);
+
+  console.error(
+    formatReport(
+      'solid2-kit — React/Solid 1.x patterns are still in the project; fix them before finishing:',
+      findings,
+    ),
+  );
+  process.exit(2);
 }
 
 function hook(agent) {
@@ -525,23 +655,28 @@ function hook(agent) {
   }
   if (!payload || typeof payload !== 'object') process.exit(0);
 
+  if (agent === 'claude' && payload.hook_event_name === 'Stop') stopGate(payload);
+
   // afterFileEdit-style payloads carry file_path at the top level; tool-use
-  // payloads carry the edited path(s) inside tool_input. Only react to
-  // write-shaped tools so reads/searches are never gated.
+  // payloads carry the edited path(s) inside tool_input. Only write-shaped
+  // and shell-shaped tools are gated, so reads/searches never are.
   const files = new Set();
   if (typeof payload.file_path === 'string') collectSourcePaths(payload.file_path, files);
   if (payload.tool_input !== undefined) {
     const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
-    if (toolName === '' || WRITE_TOOL.test(toolName)) {
-      let toolInput = payload.tool_input;
-      if (typeof toolInput === 'string') {
-        try {
-          toolInput = JSON.parse(toolInput);
-        } catch {
-          toolInput = undefined;
-        }
+    let toolInput = payload.tool_input;
+    if (typeof toolInput === 'string') {
+      try {
+        toolInput = JSON.parse(toolInput);
+      } catch {
+        toolInput = undefined;
       }
+    }
+    if (toolName === '' || WRITE_TOOL.test(toolName)) {
       collectSourcePaths(toolInput, files);
+    } else if (SHELL_TOOL.test(toolName)) {
+      const cwd = typeof payload.cwd === 'string' ? payload.cwd : process.cwd();
+      collectCommandPaths(toolInput?.command, cwd, files);
     }
   }
   if (files.size === 0) process.exit(0);
@@ -556,7 +691,10 @@ function hook(agent) {
   }
   if (findings.length === 0) process.exit(0);
 
-  const report = `solid2-kit check — React/Solid 1.x patterns in this edit; fix them now:\n\n${findings.join('\n')}`;
+  const report = formatReport(
+    'solid2-kit check — React/Solid 1.x patterns in this edit; fix them now:',
+    findings,
+  );
   if (agent === 'claude') {
     console.error(report);
     process.exit(2);
@@ -586,21 +724,16 @@ const BANNED_DEPS = {
 
 const CONFIG_SOURCE = /\.(?:m|c)?[jt]s$/;
 
-function doctor() {
-  const target = resolve(flagValue('--target', '.'));
-  const pkgPath = join(target, 'package.json');
-  if (!existsSync(pkgPath)) {
-    console.error(`solid2-kit doctor — no package.json at ${target} (use --target)`);
-    process.exit(2);
-  }
+// Files installed by this kit that carry a version marker. When the kit
+// dependency is updated but `sync` is not re-run, the installed guidance
+// keeps teaching agents the older content — silent drift doctor can catch.
+const GUIDANCE_FILES = ['.cursor/rules/solid-2.mdc', 'CLAUDE.md', 'AGENTS.md'];
 
-  let findings = 0;
-  const report = (id, message) => {
-    findings += 1;
-    console.error(`[${id}] ${message}`);
-  };
+function doctorFindings(target) {
+  const findings = [];
+  const report = (id, message) => findings.push({ id, message });
 
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  const pkg = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   for (const [name, message] of Object.entries(BANNED_DEPS)) {
     if (name in deps) report(`dep-${name.replace(/[@/]/g, '')}`, `package.json depends on "${name}". ${message}`);
@@ -649,11 +782,36 @@ function doctor() {
     }
   }
 
-  if (findings > 0) {
-    console.error(`\nsolid2-kit doctor — ${findings} finding(s). Fix the project wiring above.`);
+  for (const guidance of GUIDANCE_FILES) {
+    const path = join(target, guidance);
+    if (!existsSync(path)) continue;
+    const installed = readFileSync(path, 'utf8').match(/solid2-agent-kit v(\d[\w.-]*)/)?.[1];
+    if (installed && installed !== VERSION) {
+      report(
+        'stale-guidance',
+        `${guidance} was installed by solid2-agent-kit v${installed} but v${VERSION} is running — run \`solid2-kit sync\` so agents read current guidance.`,
+      );
+    }
+  }
+
+  return findings;
+}
+
+function doctor() {
+  const target = resolve(flagValue('--target', '.'));
+  if (!existsSync(join(target, 'package.json'))) {
+    console.error(`solid2-kit doctor — no package.json at ${target} (use --target)`);
+    process.exit(2);
+  }
+
+  const findings = doctorFindings(target);
+  for (const { id, message } of findings) console.error(`[${id}] ${message}`);
+
+  if (findings.length > 0) {
+    console.error(`\nsolid2-kit doctor — ${findings.length} finding(s). Fix the project wiring above.`);
     process.exit(1);
   }
-  console.log('solid2-kit doctor — OK (dependencies, tsconfig, and root configs look like Solid 2).');
+  console.log('solid2-kit doctor — OK (dependencies, tsconfig, root configs, and installed guidance look like Solid 2).');
 }
 
 // --- entry ------------------------------------------------------------------

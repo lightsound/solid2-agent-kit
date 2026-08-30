@@ -16,9 +16,11 @@ Supported agents: **Cursor** and **Claude Code**.
 | Always-applied hard rules | `.cursor/rules/solid-2.mdc` (glob-attached to `*.tsx`/`*.jsx`) | managed block in `CLAUDE.md` | 23 hard rules + banned Solid 1.x API table + eslint-plugin-solid lint-heritage table. Injected without the agent having to decide to read anything |
 | Agent skill | `.cursor/skills/solid-2/` | `.claude/skills/solid-2/` | Execution-model primer, decision tables, canonical patterns, a “still runs / write the other form” table, review checklist, official-doc URL index |
 | Shared agent context | managed block in `AGENTS.md` | same (Claude Code users can reference it from `CLAUDE.md`) | Core principles and pointers, always in context |
-| Mechanical gate | `solid2-kit check` | same | Whole-file regex guard over `src/**/*.{ts,tsx}` (or explicit `[files...]`): fails on props destructuring (including multi-line signatures), `{ ...props }` rest copies, `{list().map(...)}` in JSX, React imports/hooks/JSX props/`React.lazy`/`useOptimistic`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<A>`/`<HashRouter>`/`<FileRoutes>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, `=== undefined` readiness branches, SolidStart leftovers (`@solidjs/start`, `createAsync`, `useSubmission`, `"use client"`), Next.js imports, and `render(<App />)` (pass a function) |
-| Edit-time hook | `postToolUse` entry in `.cursor/hooks.json` | `PostToolUse` entry in `.claude/settings.json` | Runs the mechanical gate automatically on **every agent file edit** and feeds findings straight back into the conversation (Cursor: `additional_context`; Claude Code: stderr + exit 2), so enforcement does not depend on the agent remembering to run `check`. Wired only when the kit is a local devDependency; opt out with `--no-hooks` |
-| Project-wiring gate | `solid2-kit doctor` | same | Config drift the source gate cannot see: React / `vite-plugin-solid` / `eslint-plugin-solid` / SolidStart deps in `package.json`, a 1.x `solid-js` range, `jsx` ≠ `preserve` or `jsxImportSource` ≠ `@solidjs/web` in tsconfig, and Solid 1.x wiring in root config files |
+| Mechanical gate | `solid2-kit check` | same | Comment-stripped regex guard over `src/**/*.{ts,tsx,jsx}` (or explicit `[files...]`): fails on props destructuring (including multi-line signatures), `{ ...props }` rest copies, `{list().map(...)}` in JSX, React imports/hooks/JSX props/`React.lazy`/`useOptimistic`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<A>`/`<HashRouter>`/`<FileRoutes>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, `=== undefined` readiness branches, SolidStart leftovers (`@solidjs/start`, `createAsync`, `useSubmission`, `"use client"`), Next.js imports, and `render(<App />)` (pass a function) |
+| Edit-time hook | `postToolUse` entry in `.cursor/hooks.json` | `PostToolUse` entry in `.claude/settings.json` (matcher includes `Bash`) | Runs the mechanical gate automatically on **every agent file edit — including edits made through shell commands** (sed, heredocs, codemods; source paths mentioned in the command are checked after it ran) — and feeds findings straight back into the conversation (Cursor: `additional_context`; Claude Code: stderr + exit 2), so enforcement does not depend on the agent remembering to run `check`. Wired only when the kit is a local devDependency; opt out with `--no-hooks` |
+| Turn-end gate | — | `Stop` entry in `.claude/settings.json` | Whole-project `check` + `doctor` when the agent tries to end its turn: with findings in place the stop is blocked (exit 2) and the findings are fed back, so a turn cannot finish with React/Solid 1.x patterns left behind. Loop-safe via `stop_hook_active` (one forced continuation, never an infinite loop) |
+| Project-wiring gate | `solid2-kit doctor` | same | Config drift the source gate cannot see: React / `vite-plugin-solid` / `eslint-plugin-solid` / SolidStart deps in `package.json`, a 1.x `solid-js` range, `jsx` ≠ `preserve` or `jsxImportSource` ≠ `@solidjs/web` in tsconfig, Solid 1.x wiring in root config files, and stale installed guidance (kit updated but `sync` not re-run) |
+| Review command | `.cursor/commands/solid2-review.md` | `.claude/commands/solid2-review.md` | `/solid2-review` — on-demand deep review: runs both gates, then walks the diff against the skill checklist targeting the semantic failure classes regexes cannot see (post-`await` reads, effect misuse, unkeyed server rows, boundary placement, context snapshots) |
 
 Managed blocks are delimited with `<!-- solid2-agent-kit:*:start/end -->` markers; everything
 outside them is yours. Kit-owned files (`solid-2.mdc`, the skill directories) are overwritten
@@ -73,16 +75,32 @@ mechanical gate runs on **every file the agent edits** and violations come back 
 the agent must act on, in the same turn it introduced them:
 
 - **Cursor** — a `postToolUse` entry in `.cursor/hooks.json`; findings are injected into the
-  conversation as `additional_context` right after the write tool result.
+  conversation as `additional_context` right after the tool result.
 - **Claude Code** — a `PostToolUse` entry in `.claude/settings.json` (matcher
-  `Edit|MultiEdit|Write`); findings go to stderr with exit 2, which Claude Code feeds back
-  to the model as a correction prompt.
+  `Edit|MultiEdit|Write|Bash`); findings go to stderr with exit 2, which Claude Code feeds
+  back to the model as a correction prompt.
+
+Agents also edit files *through the shell* (sed, heredocs, `mv`, codemod scripts), which
+never hits the Edit/Write tools — so shell-shaped tool payloads are scanned for source
+paths mentioned in the command, and those files are checked after the command ran.
+
+Claude Code additionally gets a **turn-end gate**: a `Stop` hook re-runs the whole
+mechanical check (over `src`/`app`/`lib`) plus `doctor` when the agent tries to finish its
+turn, and blocks the stop while findings remain. `stop_hook_active` is honored, so an agent
+that cannot satisfy the gate is forced to continue exactly once, never looped forever.
+(Cursor's `stop` hook cannot feed back to the agent, so there the last line of defense is
+the always-attached rules plus CI.)
 
 The hook command is `node node_modules/solid2-agent-kit/bin/solid2-kit.mjs hook <agent>`,
 so it only works when the kit is installed as a devDependency (see above); `init` skips the
-wiring and prints a note otherwise. Merging is idempotent and preserves everything else in
-those JSON files. Opt out with `init --no-hooks`. Hooks never block the agent loop: clean
-edits, non-write tools, and malformed payloads exit silently.
+wiring and prints a note otherwise. Merging is idempotent — kit entries are refreshed in
+place on `sync`, user entries are preserved. Opt out with `init --no-hooks`. Hooks never
+break the agent loop: clean edits, read tools, and malformed payloads exit silently, and
+reports are capped at 40 findings.
+
+Note on gate precision: `check` (and therefore the hooks) matches against
+**comment-stripped** source, so prose like `// migrated off createResource` never trips
+the gate, while string checks (`"use client"`) still work.
 
 ## CI for consuming projects
 
@@ -130,6 +148,7 @@ bin/solid2-kit.mjs                 CLI: init / sync / check / doctor / hook
 files/shared/rules-body.md         hard rules (rendered into .mdc and CLAUDE.md)
 files/shared/agents-section.md     AGENTS.md managed-block content
 files/skills/solid-2/              SKILL.md + references/official-docs.md
+files/commands/solid2-review.md    /solid2-review command (Cursor + Claude Code)
 scripts/check-docs-drift.mjs       weekly docs cross-check
 tests/                             check/doctor fixtures + hook and init-merge tests (`npm test`)
 ```

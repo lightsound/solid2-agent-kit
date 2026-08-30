@@ -38,7 +38,30 @@ writeFileSync(
 mkdirSync(join(target, '.claude'), { recursive: true });
 writeFileSync(
   join(target, '.claude/settings.json'),
-  JSON.stringify({ permissions: { allow: ['Bash(npm test)'] }, hooks: { Stop: [{ hooks: [] }] } }, null, 2),
+  JSON.stringify(
+    {
+      permissions: { allow: ['Bash(npm test)'] },
+      hooks: {
+        Stop: [{ hooks: [{ type: 'command', command: './user-stop.sh' }] }],
+        // A stale kit entry from an older version: sync must refresh it in
+        // place (updated matcher) instead of duplicating it.
+        PostToolUse: [
+          {
+            matcher: 'Edit|Write',
+            hooks: [
+              {
+                type: 'command',
+                command: 'node node_modules/solid2-agent-kit/bin/solid2-kit.mjs hook claude',
+                timeout: 30,
+              },
+            ],
+          },
+        ],
+      },
+    },
+    null,
+    2,
+  ),
 );
 
 // Without a local install, init must skip hooks and say why.
@@ -67,16 +90,28 @@ for (const run of [1, 2]) {
   }
 
   const claudeSettings = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
-  const kitClaude = claudeSettings.hooks.PostToolUse.filter((entry) =>
-    entry.hooks?.some((item) => item.command?.includes('solid2-kit.mjs hook claude')),
-  );
+  const isKitEntry = (entry) =>
+    entry.hooks?.some((item) => item.command?.includes('solid2-kit.mjs hook claude'));
+  const kitClaude = claudeSettings.hooks.PostToolUse.filter(isKitEntry);
   if (
     kitClaude.length !== 1 ||
-    kitClaude[0].matcher !== 'Edit|MultiEdit|Write' ||
-    !claudeSettings.permissions ||
-    !claudeSettings.hooks.Stop
+    kitClaude[0].matcher !== 'Edit|MultiEdit|Write|Bash' ||
+    !claudeSettings.permissions
   ) {
-    fail(`run ${run}: expected exactly one kit claude hook merged alongside existing settings`, result);
+    fail(`run ${run}: expected the stale kit claude hook refreshed in place (Bash matcher) alongside existing settings`, result);
+  }
+  const stopEntries = claudeSettings.hooks.Stop;
+  if (
+    stopEntries.filter(isKitEntry).length !== 1 ||
+    stopEntries[0].hooks[0].command !== './user-stop.sh'
+  ) {
+    fail(`run ${run}: expected exactly one kit Stop gate merged after the user's Stop hook`, result);
+  }
+
+  for (const command of ['.cursor/commands/solid2-review.md', '.claude/commands/solid2-review.md']) {
+    if (!readFileSync(join(target, command), 'utf8').includes('solid2-kit.mjs')) {
+      fail(`run ${run}: expected ${command} to be installed`, result);
+    }
   }
 }
 

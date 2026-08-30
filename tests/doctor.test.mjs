@@ -40,6 +40,7 @@ const expected = [
   'tsconfig-jsx-import-source',
   'config-vite-plugin-solid',
   'eslint-plugin-solid',
+  'stale-guidance',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {

@@ -19,6 +19,11 @@ export const Router = createRouter({
   routes: [{ path: '/', component: Home }],
 });
 
+// Comments mentioning banned tokens must not trip the gate: this file was
+// migrated off createResource, onMount(...), className= props, and
+// <Suspense> fallbacks. produce( and batch( are gone too.
+/* Block form as well: import { createResource } from "solid-js";
+   render(<App />, root); data() === undefined; key={item.id} */
 function listen(type: string, handler: EventListener) {
   let element: HTMLElement | undefined;
   onSettled(() => {

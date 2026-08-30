@@ -61,6 +61,11 @@ if (missing.length > 0) {
   fail(`violation fixtures did not report: ${missing.join(', ')}`, violations);
 }
 
+// .jsx sources are gated like .tsx ones.
+if (!output.includes('legacy.jsx')) {
+  fail('expected violations in the .jsx fixture to be reported', violations);
+}
+
 // Explicit file mode: `check [files...]` gates only the named sources.
 const singleBad = spawnSync(
   process.execPath,
