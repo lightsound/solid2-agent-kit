@@ -33,8 +33,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    as an updater.
 5. `class`, not `className`; `for`, not `htmlFor`. `class` accepts strings, conditional
     objects, and nested arrays: `class={["btn", { active: selected() }]}`. Put *conditional*
-    names in an object — `class={`btn ${on() ? "on" : ""}`}` works but rebuilds the whole
-    string, so Solid cannot add/remove one token. `style` objects use CSS property names
+    names in an object — `class={`btn ${on() ? "on" : ""}`}`, `clsx(...)`, and
+    `.filter(Boolean).join(" ")` all work but rebuild the whole string, so Solid cannot
+    add/remove one token. `style` objects use CSS property names
     (`"background-color"`, not `backgroundColor`) and numbers do NOT auto-append `px`
     (`width: `${n}px``).
 6. **`onInput` for per-keystroke handling.** Solid's `onChange` is the native change event
@@ -84,7 +85,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `createContext<T>()` without a default throws when read outside a provider (good) — use
     that for any reactive payload. `createContext("light")` is only for a primitive static
     fallback; a dummy default on a store/signal context *runs* and then silently no-ops
-    without a provider.
+    without a provider. Truly app-wide singletons (theme, session, locale) are a
+    **module-level** signal/store — Context is subtree scoping, not a React-style
+    app store. Module state is shared across SSR requests.
 12. Refs: `let el!: HTMLDivElement` + `ref={el}` or `ref={(node) => (el = node)}`, or forward
     `props.ref`. Compose with arrays: `ref={[props.ref, (node) => (el = node)]}`. No
     `useRef`/`.current`. Ref callbacks run untracked and **without an owner**; their
@@ -93,7 +96,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     factory and return only the element callback.
 13. **Writes are staged** and commit on the next microtask. Event handlers need nothing
     special; tests and imperative integration code must call `flush()` before observing
-    updated state or DOM. Never call `flush()` inside an `action`.
+    updated *synchronous* state or DOM. Waiting on an async memo is
+    `await resolve(() => value())` (or Testing Library async queries), not `flush()`.
+    Never call `flush()` inside an `action`.
 14. Do not port these React tools — they have no Solid equivalent because the problems they
     solve don't exist: `useCallback`, `React.memo`, `forwardRef`, `useSyncExternalStore`,
     dependency arrays, `startTransition`/`useTransition` (updates are held and coordinated
@@ -101,7 +106,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 15. **Components return once.** Never early-return or conditionally return based on reactive
     values — the branch is chosen once at setup and frozen forever. Put conditionals inside
     JSX (`<Show>`, ternary, `<Switch>`/`<Match>`). Early returns on genuinely non-reactive
-    values (build-time config, missing env) are fine.
+    values (build-time config, missing env) are fine. `<Switch>` is first-wins: later
+    truthy `<Match>`es are skipped, not “all matching branches”.
 16. Prefer `textContent` for text-only content. Use `innerHTML` only for trusted or
     sanitized markup — never interpolate user input into it, never React's
     `dangerouslySetInnerHTML`, and never combine `innerHTML` with JSX children (they fight
@@ -111,6 +117,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     **narrowed accessor**, so no `!` is needed:
     `<Show when={error()}>{(err) => <p>{err().message}</p>}</Show>`. For non-reactive
     zero-arg calls, use an explicit guard variable instead of `!`.
+    Do not add `keyed` by default (the React `key` reflex) — default `Show`/`Match`
+    keep children mounted; `keyed` remounts when identity changes.
     Mechanically enforced by `solid2-kit check`.
 18. **Never hand-roll async UI state.** No `[loading, setLoading]` signals, no
     `data() === undefined` readiness branches, no `{ data, error }` signal pairs from
@@ -143,10 +151,23 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`). Server vs browser:
     `isServer` / `isDev` from `@solidjs/web`, or `clientOnly(() => import("./Widget"))` for
-    browser-only components — never `typeof window` as the SSR boundary. `JSON.stringify(store)`
+    browser-only components — never `typeof window` as the SSR boundary. Default
+    `clientOnly` starts loading at declaration; `{ lazy: true }` defers until first
+    render. `NoHydration` / `Hydration` split hydration *ownership*; they do not choose
+    visible content — `clientOnly` is for components that must never run on the server.
+    Pass a **function** to `render` / `hydrate` / `renderToString` / `renderToStream`
+    (`render(() => <App />, root)`), never `render(<App />, root)`. `hydrate` when the
+    container already holds SSR HTML; `render` for an empty mount. `renderToString`
+    emits `<Loading>` fallbacks; async or lazy-route trees need
+    `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`).
+    When the app owns the document, emit `<HydrationScript />` once before app markup;
+    extra roots get a distinct `renderId`. Import `GET` from
+    `@solidjs/web/server-functions`, never `@solidjs/start`. `JSON.stringify(store)`
     / `structuredClone(store)` without `snapshot(store)` can throw or leak proxies. Async SSR
     without `<Loading>` *works* but blocks the HTML shell until every read settles — wrap
     reads, or stream with `renderToStream`.
+    Navigation-shaped updates (a setter, then async computeds holding previous values)
+    do not need core `action` — reach for it only when writes happen *after* async work.
 23. **Composition.** Pass `props.children` through when you only render them. Inspect or
     iterate children with `children(() => props.children)` (then `.toArray()`), never a
     setup-time snapshot. Code-split with `lazy(() => import("./X"))` under `<Loading>` —
@@ -155,7 +176,14 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     because the named export is not a call-site literal. Select a component from reactive
     state with `dynamic(() => ...)` from `@solidjs/web`
     (stable identity). If the project has `@solidjs/router`, routes are `createRouter({ routes })`
-    at module scope — not JSX `<Route>` / `<A>` / `<HashRouter>`. Document head is
+    at module scope — not JSX `<Route>` / `<A>` / `<HashRouter>`. That package's `action` /
+    `query` are URL-addressable POST forms and a read cache — not core `action` /
+    `refresh` from `solid-js`. Router mutations: `<form action={save} method="post">`
+    (POST only; `.with(id)` binds args into the URL). `useAction` is JS-only. Cache
+    reads: `query(fn, "name")` then `createMemo(() => getUser(id()))`; after a mutation
+    `revalidate(getUser.key)`. Do not wrap mutations in `query` (an undeclared server
+    function becomes GET). `Router.paths` is not the current location (`useLocation` /
+    `useParams`); a route `preload` result is `props.data`. Document head is
     `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`.
 
 ## Lint heritage: eslint-plugin-solid (Solid 1.x) intents carried into this file
@@ -208,7 +236,10 @@ directory (default `src/`).
 | `renderToStringAsync(...)` | `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`) |
 | `clearDelegatedEvents` | delete — delegated listeners are scoped to each render root |
 | `vite-plugin-solid` / `jsxImportSource: "solid-js"` | `@solidjs/vite-plugin` / `"jsxImportSource": "@solidjs/web"` |
-| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` | `createRouter({ routes })`, plain `<a href={Router.paths...}>`, `hashHistory()` |
+| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` / `<FileRoutes>` | `createRouter({ routes })`, `fileRoutes(pageRoutes)`, plain `<a href={Router.paths...}>`, `hashHistory()` |
+| `createAsync` / `createAsyncStore` / `useSubmission` / router `json()` / `cache()` | `createMemo(() => getUser(id()))`, `useSubmissions`, `respond()` from `@solidjs/web`, `query` |
+| `import ... from "@solidjs/start"` / `vinxi` / `"use client"` | `GET` from `@solidjs/web/server-functions`; Solid has no `"use client"` |
+| `render(<App />, root)` | `render(() => <App />, root)` (same for `hydrate` / `renderToString` / `renderToStream`) |
 | `<MetaProvider>` | no provider — render `<Title>` / `<Meta>` / `<Link>` from `@solidjs/meta` anywhere |
 | `use:directive`, `on:`/`oncapture:`, `attr:`/`bool:`, `/*@once*/` | `ref` callbacks, camelCase event props, standard attributes, keep values reactive |
 | `resource.loading` / `resource.error` | `<Loading>` boundary / `<Errored>` boundary |

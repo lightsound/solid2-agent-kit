@@ -50,6 +50,11 @@ const expected = [
   'dangerously-set-inner-html',
   'setter-as-handler',
   'react-hook',
+  'solidstart-import',
+  'solidstart-api',
+  'use-client',
+  'next-import',
+  'render-jsx-element',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {

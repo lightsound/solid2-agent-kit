@@ -1,6 +1,12 @@
 import { lazy } from 'react';
 import { onError, catchError, createDynamic, renderToStringAsync, clearDelegatedEvents } from 'solid-js';
 import { Route, HashRouter, Navigate } from '@solidjs/router';
+import { GET } from '@solidjs/start';
+import { createAsync } from '@solidjs/router';
+import Link from 'next/link';
+import { render } from '@solidjs/web';
+
+'use client';
 
 const Page = React.lazy(() => import('./Page'));
 const About = lazy(() => import('./pages').then((m) => ({ default: m.About })));
@@ -9,18 +15,25 @@ export default function Broken() {
   onError(() => {});
   catchError(() => {});
   useId();
+  useOptimistic();
+  useSubmission(save);
+  createAsync(() => GET());
   const [count, setCount] = [0, (n: unknown) => n];
   createDynamic(() => Page);
   renderToStringAsync(() => Page);
   clearDelegatedEvents();
+  render(<Page />, document.body);
 
   return (
     <HashRouter>
       <MetaProvider>
         <Route path="/" component={Page} />
         <Navigate href="/" />
+        <FileRoutes />
+        <A href="/" />
         <div className="box" use:model={1} on:click={noop} attr:title="x" />
         <button type="button" onClick={setCount}>n</button>
+        <Link href="/" />
       </MetaProvider>
     </HashRouter>
   );

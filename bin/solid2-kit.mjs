@@ -177,7 +177,7 @@ const CHECKS = [
   {
     id: 'react-hook',
     pattern:
-      /(?<![.\w])use(?:State|Effect|Memo|Ref|Callback|Reducer|LayoutEffect|Transition|SyncExternalStore|ImperativeHandle|Id|DeferredValue|InsertionEffect)\s*\(/g,
+      /(?<![.\w])use(?:State|Effect|Memo|Ref|Callback|Reducer|LayoutEffect|Transition|SyncExternalStore|ImperativeHandle|Id|DeferredValue|InsertionEffect|Optimistic|ActionState|FormStatus)\s*\(/g,
     message: 'React hook. See the primitive mapping in the solid-2 rules.',
   },
   {
@@ -281,14 +281,42 @@ const CHECKS = [
   },
   {
     id: 'solid1-router',
-    pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate)\b/g,
+    pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
     message:
-      'Solid Router 0.x/1.x JSX. Define routes with createRouter({ routes }) and plain <a href={Router.paths...}>.',
+      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}>.',
   },
   {
     id: 'meta-provider',
     pattern: /<MetaProvider\b/g,
     message: 'Solid Meta 1.x has no provider. Render <Title>/<Meta>/<Link> from "@solidjs/meta" anywhere.',
+  },
+  {
+    id: 'solidstart-import',
+    pattern: /from\s+['"](?:@solidjs\/start|vinxi)(?:['"]|\/)/g,
+    message:
+      'SolidStart leftover. Import GET from "@solidjs/web/server-functions"; routes are createRouter / fileRoutes(pageRoutes), not @solidjs/start or vinxi.',
+  },
+  {
+    id: 'solidstart-api',
+    pattern: /(?<![.\w])(?:createAsync|createAsyncStore|useSubmission)\s*\(/g,
+    message:
+      'SolidStart / Router 0.x leftover. Read query() through createMemo(() => getUser(id())); settled results via useSubmissions (plural); replace cache()/json() with query/respond.',
+  },
+  {
+    id: 'use-client',
+    pattern: /['"]use client['"]/g,
+    message: 'React/Next client directive. Solid has no "use client"; server functions use "use server" only.',
+  },
+  {
+    id: 'next-import',
+    pattern: /from\s+['"]next(?:['"]|\/)/g,
+    message: 'Next.js import in a Solid 2.0 codebase. Use @solidjs/router, @solidjs/meta, and @solidjs/web.',
+  },
+  {
+    id: 'render-jsx-element',
+    pattern: /\b(?:render|hydrate|renderToString|renderToStream)\(\s*</g,
+    message:
+      'Pass a function to render/hydrate/renderToString/renderToStream so Solid creates the root first: render(() => <App />, root).',
   },
   {
     // A zero-arg call compared against undefined/null is a manual async
