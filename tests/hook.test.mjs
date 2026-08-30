@@ -114,6 +114,100 @@ writeFileSync(join(project, 'src/App.tsx'), 'export const App = () => <div class
 const stopClean = runHook('claude', { hook_event_name: 'Stop' }, { cwd: project });
 if (stopClean.status !== 0) fail('expected the Stop gate to pass on a clean project', stopClean);
 
+// --- pre-execution guard ------------------------------------------------
+
+// Editing kit-owned guardrail files is denied before the tool runs.
+const tamperEdit = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Edit',
+  tool_input: { file_path: '.cursor/rules/solid-2.mdc', old_string: 'a', new_string: 'b' },
+});
+if (tamperEdit.status !== 2 || !tamperEdit.stderr.includes('guardrail')) {
+  fail('expected the guard to deny editing a kit-owned rules file', tamperEdit);
+}
+
+const tamperShell = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Bash',
+  tool_input: { command: 'rm -rf .claude/skills/solid-2' },
+});
+if (tamperShell.status !== 2) fail('expected the guard to deny deleting the kit skill', tamperShell);
+
+const readGuardrail = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Bash',
+  tool_input: { command: 'cat .cursor/rules/solid-2.mdc' },
+});
+if (readGuardrail.status !== 0) fail('expected the guard to allow reading guardrail files', readGuardrail);
+
+// Removing the kit marker from hook configs / managed blocks is denied;
+// marker-preserving edits pass.
+const markerRemoval = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Edit',
+  tool_input: {
+    file_path: '.claude/settings.json',
+    old_string: '"command": "node node_modules/solid2-agent-kit/bin/solid2-kit.mjs hook claude"',
+    new_string: '',
+  },
+});
+if (markerRemoval.status !== 2) fail('expected the guard to deny removing kit hook entries', markerRemoval);
+
+const markerKept = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Edit',
+  tool_input: { file_path: '.claude/settings.json', old_string: '"Bash(ls)"', new_string: '"Bash(ls -la)"' },
+});
+if (markerKept.status !== 0) fail('expected the guard to allow marker-preserving settings edits', markerKept);
+
+// Banned dependency installs are denied before they run; lookalike package
+// names are not (token match, not substring).
+const bannedDep = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Bash',
+  tool_input: { command: 'npm install react@19 && npm run build' },
+});
+if (bannedDep.status !== 2 || !bannedDep.stderr.includes('react')) {
+  fail('expected the guard to deny installing react', bannedDep);
+}
+
+const lookalikeDep = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Bash',
+  tool_input: { command: 'bun add react-aria @solidjs/router' },
+});
+if (lookalikeDep.status !== 0) fail('expected the guard to allow lookalike package names', lookalikeDep);
+
+// Pre-execution events never run the content check: an ordinary edit to a
+// (currently bad) source file must be allowed so the agent can fix it.
+const preEditAllowed = runHook('claude', {
+  hook_event_name: 'PreToolUse',
+  tool_name: 'Edit',
+  tool_input: { file_path: badFile, old_string: 'a', new_string: 'b' },
+});
+if (preEditAllowed.status !== 0 || preEditAllowed.stderr.trim() !== '') {
+  fail('expected PreToolUse to allow ordinary source edits without content checks', preEditAllowed);
+}
+
+// Cursor deny channel: permission JSON on stdout.
+const cursorTamper = runHook('cursor', {
+  hook_event_name: 'beforeShellExecution',
+  command: "sed -i 's/x/y/' .cursor/rules/solid-2.mdc",
+});
+const cursorDecision = JSON.parse(cursorTamper.stdout || '{}');
+if (cursorTamper.status !== 0 || cursorDecision.permission !== 'deny') {
+  fail('expected the cursor guard to deny shell tampering with permission JSON', cursorTamper);
+}
+
+const cursorWriteGuardrail = runHook('cursor', {
+  hook_event_name: 'preToolUse',
+  tool_name: 'Write',
+  tool_input: { file_path: '.cursor/skills/solid-2/SKILL.md', content: 'weakened' },
+});
+if (JSON.parse(cursorWriteGuardrail.stdout || '{}').permission !== 'deny') {
+  fail('expected the cursor guard to deny writing to the kit skill', cursorWriteGuardrail);
+}
+
 console.log(
-  'hook — OK (claude stderr+exit2, cursor additional_context, shell-edit coverage, Stop gate with loop guard, read-tool and malformed payloads ignored)',
+  'hook — OK (claude stderr+exit2, cursor additional_context, shell-edit coverage, Stop gate with loop guard, pre-execution guard: tamper + banned installs denied, ordinary edits allowed)',
 );

@@ -128,38 +128,44 @@ const cursorEntryMatches = (entry, marker) =>
 const claudeEntryMatches = (entry, marker) =>
   (entry?.hooks ?? []).some((item) => typeof item?.command === 'string' && item.command.includes(marker));
 
-// Cursor postToolUse hook: on every write- or shell-shaped tool call,
-// `hook cursor` checks the touched sources and injects findings as
-// additional_context.
+// Cursor hooks: postToolUse (post-edit check injected as additional_context)
+// plus preToolUse / beforeShellExecution (pre-execution guard: guardrail
+// tampering and banned-dependency installs are denied before they run).
 function upsertCursorHook(target) {
   const filePath = join(target, '.cursor/hooks.json');
   const config = readJsonConfig(filePath);
   if (config === null) return null;
   config.version ??= 1;
   config.hooks ??= {};
-  upsertHookEntry(
-    (config.hooks.postToolUse ??= []),
-    'solid2-kit.mjs hook cursor',
-    { command: `node ${KIT_LOCAL_BIN} hook cursor` },
-    cursorEntryMatches,
-  );
+  const command = `node ${KIT_LOCAL_BIN} hook cursor`;
+  for (const event of ['postToolUse', 'preToolUse', 'beforeShellExecution']) {
+    upsertHookEntry((config.hooks[event] ??= []), 'solid2-kit.mjs hook cursor', { command }, cursorEntryMatches);
+  }
   return writeJsonConfig(filePath, config);
 }
 
 // Claude Code hooks: PostToolUse (`hook claude` prints findings to stderr and
 // exits 2, which Claude Code feeds back into the model as correction context;
-// Bash is matched so shell edits via sed/heredocs are gated too) and Stop
-// (whole-project final gate — the agent cannot end its turn with findings).
+// Bash is matched so shell edits via sed/heredocs are gated too), PreToolUse
+// (pre-execution guard, may deny) and Stop (whole-project final gate — the
+// agent cannot end its turn with findings).
 function upsertClaudeHook(target) {
   const filePath = join(target, '.claude/settings.json');
   const config = readJsonConfig(filePath);
   if (config === null) return null;
   config.hooks ??= {};
   const command = `node ${KIT_LOCAL_BIN} hook claude`;
+  const toolMatcher = 'Edit|MultiEdit|Write|Bash';
+  upsertHookEntry(
+    (config.hooks.PreToolUse ??= []),
+    'solid2-kit.mjs hook claude',
+    { matcher: toolMatcher, hooks: [{ type: 'command', command, timeout: 30 }] },
+    claudeEntryMatches,
+  );
   upsertHookEntry(
     (config.hooks.PostToolUse ??= []),
     'solid2-kit.mjs hook claude',
-    { matcher: 'Edit|MultiEdit|Write|Bash', hooks: [{ type: 'command', command, timeout: 30 }] },
+    { matcher: toolMatcher, hooks: [{ type: 'command', command, timeout: 30 }] },
     claudeEntryMatches,
   );
   upsertHookEntry(
@@ -169,6 +175,18 @@ function upsertClaudeHook(target) {
     claudeEntryMatches,
   );
   return writeJsonConfig(filePath, config);
+}
+
+// Wire a `lint:solid` script (referenced by the AGENTS.md guidance) into the
+// consuming project so agents and CI can run both gates by name.
+function upsertLintScript(target) {
+  const filePath = join(target, 'package.json');
+  if (!existsSync(filePath)) return null;
+  const pkg = readJsonConfig(filePath);
+  if (pkg === null) return null;
+  if (pkg.scripts?.['lint:solid']) return null;
+  (pkg.scripts ??= {})['lint:solid'] = 'solid2-kit check && solid2-kit doctor';
+  return writeJsonConfig(filePath, pkg);
 }
 
 function copySkill(targetSkillDir) {
@@ -242,6 +260,7 @@ function init() {
     if (existsSync(join(target, KIT_LOCAL_BIN))) {
       if (wantCursor) written.push(upsertCursorHook(target));
       if (wantClaude) written.push(upsertClaudeHook(target));
+      written.push(upsertLintScript(target));
     } else {
       hooksNote =
         'edit-time hooks not wired: install the kit as a devDependency ("solid2-agent-kit": "github:lightsound/solid2-agent-kit") so `node node_modules/solid2-agent-kit/bin/solid2-kit.mjs` resolves, then re-run sync. Pass --no-hooks to silence this note.';
@@ -610,6 +629,123 @@ function collectCommandPaths(command, cwd, found = new Set()) {
   return found;
 }
 
+// --- pre-execution guard (self-defense + proactive denial) -------------------
+// Agents that keep getting blocked by a gate tend to conclude the gate is
+// wrong and edit or delete it. Pre-execution hooks (Claude PreToolUse,
+// Cursor preToolUse / beforeShellExecution) can deny a tool call before it
+// runs, so this guard refuses:
+//   - edits/deletes of kit-owned guardrail files (rules, skill, commands,
+//     the kit itself under node_modules),
+//   - edits that would remove the kit's markers from hook configs or the
+//     AGENTS.md / CLAUDE.md managed blocks,
+//   - shell rewrites of those files (sed/rm/redirects — uninspectable),
+//   - installing dependencies doctor would flag anyway (react,
+//     vite-plugin-solid, eslint-plugin-solid, SolidStart, ...).
+// Everything else is allowed; this gate never inspects file *content* being
+// written (that is the post-edit hook's job).
+
+const GUARDRAIL_PATH =
+  /\.cursor\/rules\/solid-2\.mdc|(?:\.cursor|\.claude)\/skills\/solid-2|(?:\.cursor|\.claude)\/commands\/solid2-review\.md|node_modules\/solid2-agent-kit\//;
+const MARKER_FILE = /(?:\.claude\/settings\.json|\.cursor\/hooks\.json|AGENTS\.md|CLAUDE\.md)$/;
+const KIT_MARKER = 'solid2-agent-kit';
+const SHELL_WRITE = /\b(?:rm|mv|cp|sed|tee|truncate|unlink|chmod|perl|python[\d.]*)\b|>>?/;
+const INSTALL_CMD = /\b(?:npm|pnpm|yarn|bun)\s+(?:-\S+\s+)*(?:install|add|i)\b/;
+
+const TAMPER_MESSAGE =
+  'solid2-agent-kit guardrail: this file is kit-managed Solid 2.0 guidance/enforcement. Do not edit, weaken, or delete it — fix the flagged code instead. Kit files update via `solid2-kit sync`. If you believe the guardrail itself is wrong, or the user explicitly wants it removed, stop and tell the user.';
+
+function bannedInstall(command) {
+  if (!INSTALL_CMD.test(command)) return null;
+  for (const raw of command.split(/\s+/)) {
+    const token = raw.replace(/^['"]|['"]$/g, '');
+    const name = token.replace(/(?!^)@.*$/, '');
+    if (name in BANNED_DEPS) return name;
+  }
+  return null;
+}
+
+function preToolGate(agent, payload) {
+  const deny = (agentMessage) => {
+    if (agent === 'claude') {
+      console.error(agentMessage);
+      process.exit(2);
+    }
+    console.log(
+      JSON.stringify({
+        permission: 'deny',
+        agent_message: agentMessage,
+        user_message: 'solid2-agent-kit guardrail blocked this action.',
+      }),
+    );
+    process.exit(0);
+  };
+
+  let toolInput = payload.tool_input;
+  if (typeof toolInput === 'string') {
+    try {
+      toolInput = JSON.parse(toolInput);
+    } catch {
+      toolInput = undefined;
+    }
+  }
+  const toolName = typeof payload.tool_name === 'string' ? payload.tool_name : '';
+
+  // Shell commands: beforeShellExecution carries `command` at the top level,
+  // PreToolUse(Bash) inside tool_input.
+  const command =
+    typeof payload.command === 'string'
+      ? payload.command
+      : SHELL_TOOL.test(toolName) && typeof toolInput?.command === 'string'
+        ? toolInput.command
+        : null;
+  if (command !== null) {
+    const banned = bannedInstall(command);
+    if (banned) {
+      deny(
+        `solid2-agent-kit guardrail: do not install "${banned}". ${BANNED_DEPS[banned]} (\`solid2-kit doctor\` fails on it.)`,
+      );
+    }
+    if (SHELL_WRITE.test(command)) {
+      if (GUARDRAIL_PATH.test(command)) deny(TAMPER_MESSAGE);
+      if (/(?:\.claude\/settings\.json|\.cursor\/hooks\.json)/.test(command)) {
+        deny(
+          'solid2-agent-kit guardrail: rewriting hook configs through the shell cannot be verified. Use the Edit tool (keeping the solid2-agent-kit hook entries), or ask the user.',
+        );
+      }
+    }
+    process.exit(0);
+  }
+
+  if (!WRITE_TOOL.test(toolName)) process.exit(0);
+  const filePath = typeof toolInput?.file_path === 'string' ? toolInput.file_path : toolInput?.path;
+  if (typeof filePath !== 'string') process.exit(0);
+
+  if (GUARDRAIL_PATH.test(filePath)) deny(TAMPER_MESSAGE);
+
+  if (MARKER_FILE.test(filePath)) {
+    // Editing these files is fine (users add their own hooks/sections through
+    // agents) as long as the kit's entries/managed blocks survive the edit.
+    const removalMessage = `solid2-agent-kit guardrail: this edit removes the ${KIT_MARKER} entries/managed block from ${filePath}. Keep them intact; run \`solid2-kit sync\` to update them. If the user explicitly wants the kit removed, stop and tell the user to do it.`;
+    if (typeof toolInput.content === 'string') {
+      let existing = '';
+      try {
+        existing = readFileSync(resolve(typeof payload.cwd === 'string' ? payload.cwd : process.cwd(), filePath), 'utf8');
+      } catch {
+        // New file — nothing to preserve.
+      }
+      if (existing.includes(KIT_MARKER) && !toolInput.content.includes(KIT_MARKER)) deny(removalMessage);
+    } else if (
+      typeof toolInput.old_string === 'string' &&
+      toolInput.old_string.includes(KIT_MARKER) &&
+      !String(toolInput.new_string ?? '').includes(KIT_MARKER)
+    ) {
+      deny(removalMessage);
+    }
+  }
+
+  process.exit(0);
+}
+
 // Claude Code Stop hook: the per-edit hooks catch violations file by file,
 // but the agent can still end a turn with violations introduced through
 // uncovered paths (git operations, scripts writing files, moved code). The
@@ -655,7 +791,12 @@ function hook(agent) {
   }
   if (!payload || typeof payload !== 'object') process.exit(0);
 
-  if (agent === 'claude' && payload.hook_event_name === 'Stop') stopGate(payload);
+  const event = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : '';
+  if (agent === 'claude' && event === 'Stop') stopGate(payload);
+  // Pre-execution events (PreToolUse / preToolUse / beforeShellExecution)
+  // only run the guard — never the content check (the file has not been
+  // written yet, so checking would block edits based on pre-edit state).
+  if (/^(?:pre|before)/i.test(event)) preToolGate(agent, payload);
 
   // afterFileEdit-style payloads carry file_path at the top level; tool-use
   // payloads carry the edited path(s) inside tool_input. Only write-shaped

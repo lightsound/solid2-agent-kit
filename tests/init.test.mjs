@@ -29,6 +29,11 @@ function fail(message, result) {
 const target = mkdtempSync(join(tmpdir(), 'solid2-kit-init-'));
 process.on('exit', () => rmSync(target, { recursive: true, force: true }));
 
+writeFileSync(
+  join(target, 'package.json'),
+  JSON.stringify({ name: 'consumer', scripts: { build: 'vite build' } }, null, 2),
+);
+
 // Pre-existing user hook config that the merge must preserve.
 mkdirSync(join(target, '.cursor'), { recursive: true });
 writeFileSync(
@@ -88,6 +93,12 @@ for (const run of [1, 2]) {
   if (cursorHooks.version !== 1 || cursorEntries[0].command !== './user-audit.sh' || kitCursor.length !== 1) {
     fail(`run ${run}: expected exactly one kit cursor hook merged after the user's entry`, result);
   }
+  for (const event of ['preToolUse', 'beforeShellExecution']) {
+    const guards = cursorHooks.hooks[event]?.filter((entry) => entry.command?.includes('solid2-kit.mjs hook cursor'));
+    if (guards?.length !== 1) {
+      fail(`run ${run}: expected exactly one kit cursor ${event} guard entry`, result);
+    }
+  }
 
   const claudeSettings = JSON.parse(readFileSync(join(target, '.claude/settings.json'), 'utf8'));
   const isKitEntry = (entry) =>
@@ -99,6 +110,10 @@ for (const run of [1, 2]) {
     !claudeSettings.permissions
   ) {
     fail(`run ${run}: expected the stale kit claude hook refreshed in place (Bash matcher) alongside existing settings`, result);
+  }
+  const kitPre = claudeSettings.hooks.PreToolUse?.filter(isKitEntry);
+  if (kitPre?.length !== 1 || kitPre[0].matcher !== 'Edit|MultiEdit|Write|Bash') {
+    fail(`run ${run}: expected exactly one kit PreToolUse guard entry`, result);
   }
   const stopEntries = claudeSettings.hooks.Stop;
   if (
@@ -113,6 +128,27 @@ for (const run of [1, 2]) {
       fail(`run ${run}: expected ${command} to be installed`, result);
     }
   }
+
+  const pkg = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
+  if (pkg.scripts['lint:solid'] !== 'solid2-kit check && solid2-kit doctor' || pkg.scripts.build !== 'vite build') {
+    fail(`run ${run}: expected lint:solid wired alongside existing scripts`, result);
+  }
+}
+
+// A pre-existing lint:solid script is never overwritten.
+const customTarget = mkdtempSync(join(tmpdir(), 'solid2-kit-lint-'));
+process.on('exit', () => rmSync(customTarget, { recursive: true, force: true }));
+mkdirSync(join(customTarget, 'node_modules/solid2-agent-kit/bin'), { recursive: true });
+writeFileSync(join(customTarget, 'node_modules/solid2-agent-kit/bin/solid2-kit.mjs'), '// stub\n');
+writeFileSync(
+  join(customTarget, 'package.json'),
+  JSON.stringify({ scripts: { 'lint:solid': 'my custom gate' } }, null, 2),
+);
+const customRun = runInit(customTarget);
+if (customRun.status !== 0) fail('init with custom lint:solid failed', customRun);
+const customPkg = JSON.parse(readFileSync(join(customTarget, 'package.json'), 'utf8'));
+if (customPkg.scripts['lint:solid'] !== 'my custom gate') {
+  fail('expected a pre-existing lint:solid script to be left untouched', customRun);
 }
 
 // --no-hooks leaves hook configs alone even when the kit is installed.

@@ -19,6 +19,7 @@ Supported agents: **Cursor** and **Claude Code**.
 | Mechanical gate | `solid2-kit check` | same | Comment-stripped regex guard over `src/**/*.{ts,tsx,jsx}` (or explicit `[files...]`): fails on props destructuring (including multi-line signatures), `{ ...props }` rest copies, `{list().map(...)}` in JSX, React imports/hooks/JSX props/`React.lazy`/`useOptimistic`, Solid 1.x imports/APIs/components/JSX namespaces, `vite-plugin-solid`, old-router `<Route>`/`<A>`/`<HashRouter>`/`<FileRoutes>`, `MetaProvider`, `Context.Provider`, camelCase style keys, `key` props, `value()!` hand-narrowing, hand-rolled loading signals, `=== undefined` readiness branches, SolidStart leftovers (`@solidjs/start`, `createAsync`, `useSubmission`, `"use client"`), Next.js imports, and `render(<App />)` (pass a function) |
 | Edit-time hook | `postToolUse` entry in `.cursor/hooks.json` | `PostToolUse` entry in `.claude/settings.json` (matcher includes `Bash`) | Runs the mechanical gate automatically on **every agent file edit — including edits made through shell commands** (sed, heredocs, codemods; source paths mentioned in the command are checked after it ran) — and feeds findings straight back into the conversation (Cursor: `additional_context`; Claude Code: stderr + exit 2), so enforcement does not depend on the agent remembering to run `check`. Wired only when the kit is a local devDependency; opt out with `--no-hooks` |
 | Turn-end gate | — | `Stop` entry in `.claude/settings.json` | Whole-project `check` + `doctor` when the agent tries to end its turn: with findings in place the stop is blocked (exit 2) and the findings are fed back, so a turn cannot finish with React/Solid 1.x patterns left behind. Loop-safe via `stop_hook_active` (one forced continuation, never an infinite loop) |
+| Pre-execution guard | `preToolUse` + `beforeShellExecution` entries in `.cursor/hooks.json` | `PreToolUse` entry in `.claude/settings.json` | Denies actions **before they run**: edits/deletes of kit-owned guardrail files (an agent blocked by a gate will try to remove the gate), edits that would strip the kit's hook entries or managed blocks, uninspectable shell rewrites of those files, and `npm/pnpm/yarn/bun install` of banned dependencies (`react`, `vite-plugin-solid`, `eslint-plugin-solid`, SolidStart, ...) — caught proactively instead of post-hoc by `doctor` |
 | Project-wiring gate | `solid2-kit doctor` | same | Config drift the source gate cannot see: React / `vite-plugin-solid` / `eslint-plugin-solid` / SolidStart deps in `package.json`, a 1.x `solid-js` range, `jsx` ≠ `preserve` or `jsxImportSource` ≠ `@solidjs/web` in tsconfig, Solid 1.x wiring in root config files, and stale installed guidance (kit updated but `sync` not re-run) |
 | Review command | `.cursor/commands/solid2-review.md` | `.claude/commands/solid2-review.md` | `/solid2-review` — on-demand deep review: runs both gates, then walks the diff against the skill checklist targeting the semantic failure classes regexes cannot see (post-`await` reads, effect misuse, unkeyed server rows, boundary placement, context snapshots) |
 
@@ -90,6 +91,24 @@ turn, and blocks the stop while findings remain. `stop_hook_active` is honored, 
 that cannot satisfy the gate is forced to continue exactly once, never looped forever.
 (Cursor's `stop` hook cannot feed back to the agent, so there the last line of defense is
 the always-attached rules plus CI.)
+
+Both agents also get a **pre-execution guard** (Claude: `PreToolUse`; Cursor: `preToolUse`
+and `beforeShellExecution`). A blocked agent's classic next move is to decide the gate
+itself is wrong — edit the rules file, delete the skill, or strip the hook entries. The
+guard denies, before the tool call runs: writes to kit-owned files (rules `.mdc`, skill
+directories, review commands, the kit under `node_modules`); edits to `.cursor/hooks.json`
+/ `.claude/settings.json` / `AGENTS.md` / `CLAUDE.md` that would remove the kit's entries
+or managed blocks (marker-preserving edits pass — agents can still add the user's own
+hooks and sections); shell rewrites of those files (`sed`/`rm`/redirects — uninspectable,
+so the deny message redirects to the Edit tool); and package-manager installs of
+dependencies `doctor` bans (exact token match, so `react` is denied but `react-aria` is
+not). The deny message always tells the agent what to do instead — fix the flagged code,
+run `solid2-kit sync`, or stop and ask the user. Pre-execution events never run the
+content check itself: fixing a currently-bad file is always allowed.
+
+When the kit is installed as a devDependency, `init` also wires a `lint:solid` script
+(`solid2-kit check && solid2-kit doctor`) into the project's `package.json` (only if the
+script does not already exist), so agents and CI can run both gates by name.
 
 The hook command is `node node_modules/solid2-agent-kit/bin/solid2-kit.mjs hook <agent>`,
 so it only works when the kit is installed as a devDependency (see above); `init` skips the
