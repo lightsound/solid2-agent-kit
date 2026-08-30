@@ -1059,7 +1059,11 @@ function doctorFindings(target) {
   for (const guidance of GUIDANCE_FILES) {
     const path = join(target, guidance);
     if (!existsSync(path)) continue;
-    const installed = readFileSync(path, 'utf8').match(/solid2-agent-kit v(\d[\w.-]*)/)?.[1];
+    // The version must end on a word character so the sentence punctuation
+    // that follows the marker ("… v0.8.0. Do not edit …", "…v0.8.0**.") is
+    // not captured — with `[\w.-]*` alone the trailing period made every
+    // freshly synced file compare as "0.8.0." !== "0.8.0" (always stale).
+    const installed = readFileSync(path, 'utf8').match(/solid2-agent-kit v(\d(?:[\w.-]*\w)?)/)?.[1];
     if (installed && installed !== VERSION) {
       report(
         'stale-guidance',
