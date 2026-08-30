@@ -55,6 +55,10 @@ const expected = [
   'use-client',
   'next-import',
   'render-jsx-element',
+  'typeof-window',
+  'next-nav',
+  'react-dom-event',
+  'history-nav',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {

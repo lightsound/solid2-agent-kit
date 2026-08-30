@@ -292,15 +292,15 @@ const CHECKS = [
   },
   {
     id: 'solidstart-import',
-    pattern: /from\s+['"](?:@solidjs\/start|vinxi)(?:['"]|\/)/g,
+    pattern: /from\s+['"](?:@solidjs\/start|vinxi|h3|nitropack)(?:['"]|\/)/g,
     message:
-      'SolidStart leftover. Import GET from "@solidjs/web/server-functions"; routes are createRouter / fileRoutes(pageRoutes), not @solidjs/start or vinxi.',
+      'SolidStart leftover. Import GET from "@solidjs/web/server-functions"; routes are createRouter / fileRoutes(pageRoutes), not @solidjs/start, vinxi, h3, or nitropack.',
   },
   {
     id: 'solidstart-api',
-    pattern: /(?<![.\w])(?:createAsync|createAsyncStore|useSubmission)\s*\(/g,
+    pattern: /(?<![.\w])(?:createAsync|createAsyncStore|useSubmission|defineEventHandler)\s*\(/g,
     message:
-      'SolidStart / Router 0.x leftover. Read query() through createMemo(() => getUser(id())); settled results via useSubmissions (plural); replace cache()/json() with query/respond.',
+      'SolidStart / Router 0.x leftover. Read query() through createMemo(() => getUser(id())); settled results via useSubmissions (plural); replace cache()/json() with query/respond; rewrite H3 handlers against Request/Response.',
   },
   {
     id: 'use-client',
@@ -317,6 +317,31 @@ const CHECKS = [
     pattern: /\b(?:render|hydrate|renderToString|renderToStream)\(\s*</g,
     message:
       'Pass a function to render/hydrate/renderToString/renderToStream so Solid creates the root first: render(() => <App />, root).',
+  },
+  {
+    id: 'typeof-window',
+    pattern: /typeof\s+window\b/g,
+    message:
+      '`typeof window` is not the SSR boundary. Use isServer / isDev from "@solidjs/web", or clientOnly(() => import("./Widget")).',
+  },
+  {
+    id: 'next-nav',
+    pattern:
+      /(?<![.\w])(?:useRouter|usePathname|revalidatePath|revalidateTag|notFound|hydrateRoot)\s*\(/g,
+    message:
+      'Next.js / React DOM leftover. In-app navigation is useNavigate / <a href={Router.paths...}>; 404 is httpStatus(404); hydrate is hydrate(() => <App />, root).',
+  },
+  {
+    id: 'react-dom-event',
+    pattern: /\b(?:onDoubleClick|onKeyPress|suppressHydrationWarning)=/g,
+    message:
+      'React DOM prop. Native dblclick is onDblClick; keypress is onKeyDown; Solid has no suppressHydrationWarning.',
+  },
+  {
+    id: 'history-nav',
+    pattern: /\b(?:history\.pushState|history\.replaceState|window\.location\.href\s*=)/g,
+    message:
+      'Bypass of the router. In-app navigation is useNavigate() or <a href={Router.paths...}>.',
   },
   {
     // A zero-arg call compared against undefined/null is a manual async

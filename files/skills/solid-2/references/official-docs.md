@@ -98,6 +98,7 @@ read these before writing route JSX.
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/affects.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/on-settled.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/refresh.md
+- https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/advanced/specialized-reactivity/on-cleanup.md
 
 ## Reference: components and JSX (solid-js)
 
