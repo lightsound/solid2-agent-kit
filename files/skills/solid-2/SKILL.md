@@ -70,6 +70,8 @@ Most React `useEffect` code should NOT become `createEffect`:
 | Named export from a lazy module | `lazy(() => import("./pages"), { export: "About" })` |
 | Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity; prefer over `<Dynamic>`) |
 | Overlay / modal | `<Portal>` — hoist async reads *above* the portal (reads inside start on the client) |
+| Async value used several layers down | Create the memo high; pass `value={memo()}` through intermediates (they do not wait); put `<Loading>` around the leaf read |
+| Nested child with its own fetch | Leave it nested — it runs in parallel. Sequential only when the second call needs the first response (`fetchAuthor(story().authorId)`) |
 | Browser-only widget (charts, maps, `window`) | `clientOnly(() => import("./Chart"))` from `@solidjs/web` (`{ lazy: true }` defers the import until first render) |
 | Server vs browser branch | `isServer` / `isDev` from `@solidjs/web` (build-time constants), not `typeof window` |
 | SSR-stable `id` / `for` / `aria-*` pairing | `createUniqueId()` |
@@ -245,44 +247,88 @@ const [signInError, setSignInError] = createSignal<string | null>(() => {
 });
 ```
 
-### Async data
+### Async data — fetch high, block low
+
+Where you create a value is a performance decision. Where you block on it is a
+design decision. Neither is an architecture decision: JSX component props are
+lazy (**passing isn't reading**), so intermediates do not wait, and nested
+components mount immediately so their fetches run in parallel.
 
 ```tsx
-import { Errored, For, Loading, createMemo, createSignal } from 'solid-js';
+import { Errored, For, Loading, createMemo, createSignal, isPending, latest } from 'solid-js';
 
-const [query, setQuery] = createSignal('');
-const results = createMemo(async () => {
-  const value = query().trim();
-  if (!value) return [];
-  return api.search(value);
-});
+function App() {
+  const [selectedId, setSelectedId] = createSignal(1);
+  const story = createMemo(() => fetchStory(selectedId())); // fetch high
 
-return (
-  <Errored fallback={(error) => <p>{String(error())}</p>}>
-    <Loading fallback={<p>Searching...</p>}>
-      <ul><For each={results()}>{(r) => <li>{r.title}</li>}</For></ul>
-    </Loading>
-  </Errored>
-);
+  return (
+    <Errored fallback={(error, reset) => <ErrorFallback error={error} reset={reset} />}>
+      <StoryList selectedId={latest(selectedId)} onSelect={setSelectedId} />
+      <main class={{ pending: isPending(selectedId) }}>
+        <Loading fallback={<DetailSkeleton />}> {/* block low — the read, not chrome */}
+          <StoryDetail story={story()} storyId={selectedId()} />
+        </Loading>
+      </main>
+    </Errored>
+  );
+}
+
+function StoryDetail(props: { story: Story; storyId: number }) {
+  // Colorless derivation: no await, no Promise type. The memo becomes async itself.
+  const byline = () => `${props.story.author} · ${props.story.points} points`;
+  return (
+    <article>
+      <h1>{props.story.title}</h1>
+      <p>{byline()}</p>
+      <Comments storyId={props.storyId} />
+    </article>
+  );
+}
 ```
 
-- The `<Loading>` boundary must be an owner ancestor of the **read** (`results()`), not of
+`story()` is a `Story`, not `Story | undefined` — if the computation is running,
+the value is there. No `?.`, no `!`. `<StoryDetail story={story()} />` is the
+correct colorless form: the prop expression is a getter, so `StoryDetail` (and
+every layout in between) renders immediately. The wait happens when
+`props.story.title` is read, under that `<Loading>`.
+
+```tsx
+// WRONG — extracting at the parent is a real read; child's <Loading> never sees it
+const current = story();
+return <StoryDetail story={current} />;
+
+// Fine, but not the default — pass the memo only when the child must
+// refresh / isPending / latest that source
+return <StoryDetail story={story} />;
+```
+
+- The `<Loading>` boundary must be an owner ancestor of the **read**, not of
   where the memo was created, and not of page chrome (header/nav) that should stay mounted.
-  Boundary placement is purely a UX decision — it does not change when fetches start
-  (no waterfalls: nested components set up and fetch in parallel). After first paint the
+  Lifting the fetch does **not** mean lifting the boundary. After first paint the
   boundary keeps settled content during refetch; `isPending(results)` (pass the accessor,
-  not `isPending(results())`) is the
-  indicator. Use `on={query()}` (the **value**, not the accessor `on={query}`) only when
-  that identity should put the fallback back on screen.
+  not `isPending(results())`) is the indicator. Use `on={query()}` (the **value**, not the
+  accessor `on={query}`) only when that identity should put the fallback back on screen.
   Do not use `isPending` as the first-load spinner.
+- **Nesting is not a waterfall.** `Comments` above fetches in parallel with `story`
+  because it reads `props.storyId` (already known), not `props.story`. Passing
+  `storyId={props.story.id}` *would* wait on the story fetch — that is a real data
+  dependency, same as `createMemo(() => fetchAuthor(story().authorId))`.
+- `isPending` is a question, not state — ask it of the async memo *or* of the write
+  that started the work (`isPending(selectedId)`), even when the fetch lives in a
+  child. `latest(selectedId)` is the in-flight selection when the highlight should
+  move before content swaps. The default hold keeps selection and content consistent.
 - Read every reactive input **before the first `await`** in an async computation. A read
   after `await` does not subscribe; production can sit pending with no retry.
 - `<Errored>` function fallbacks receive an error **accessor** and a `reset` callback:
-  `fallback={(error, reset) => ...}`.
+  `fallback={(error, reset) => ...}`. The boundary **heals** when the source succeeds
+  again (refresh, live reconnect, input change) — it is graph status, not a terminal
+  React ErrorBoundary. `reset` retries the collected *data sources*, not a UI remount.
 - Refetch: `refresh(results)`. In-flight indicator: `isPending(results)` (or
   `isPending(() => results())`). Freshest in-flight value for a preview:
   `latest(results)`. Do not start `fetch` at component-body top level.
-- Coordinate reveal order of sibling `<Loading>` boundaries with `<Reveal order="sequential" | "together" | "natural">`.
+- Coordinate sibling `<Loading>` reveal with `<Reveal>` (`order="sequential"` default,
+  or `"together"` / `"natural"`). `collapsed` (sequential only) suppresses tail
+  skeletons past the frontier so the page does not stack fallbacks as popcorn.
 
 **Never hand-roll these states.** No `[loading, setLoading]` signal, no
 `data() === undefined` branch, no `{ data, error }` signal pair — those are React/Solid 1.x
@@ -334,20 +380,59 @@ function createSubscriptionQuery<T>(
 }
 ```
 
+Server-function `live()` sources are the same shape (async iterable → memo). Connection
+state is `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`), not a field
+in the yielded value — see [Server functions](#server-functions--use-server).
+
 ### Mutations: `action` + optimistic state
+
+The synchronous mutation *is* the prediction. Optimistic UI is not a second copy of
+state — it is an overlay the graph discards when the action settles (pass or fail).
+There is no rollback to write. Put in-flight affordances on the record
+(`pending?: boolean`); they vanish with the overlay.
 
 ```tsx
 import { action, createOptimisticStore, refresh } from 'solid-js';
 
-const [todos, setTodos] = createOptimisticStore(fetchTodos, []);
+type Todo = { id: string; title: string; completed: boolean; pending?: boolean; error?: { completed: boolean } };
 
-const addTodo = action(function* (todo: Todo) {
-  setTodos((draft) => { draft.push(todo); }); // optimistic, auto-reverts on failure
-  yield saveTodo(todo);                        // yield promises to stay in the transaction
-  refresh(todos);
-});
-// invoke from an event handler: onClick={() => void addTodo(newTodo)}
+function createTodos() { // call from a component — not module scope (SSR shares modules)
+  const errors = new Map<string, { completed: boolean }>();
+  const [todos, setTodos] = createOptimisticStore<Todo[]>(async () => {
+    const current = await api.list();
+    return current.map((todo) => {
+      const error = errors.get(todo.id);
+      return error ? { ...todo, error } : todo;
+    });
+  }, []);
+
+  const toggleTodo = action(function* (id: string, completed: boolean) {
+    setTodos((draft) => {
+      const todo = draft.find((row) => row.id === id);
+      if (!todo) return;
+      todo.completed = completed;
+      todo.pending = true;
+    });
+    try {
+      yield api.toggle(id, completed);
+      errors.delete(id);
+    } catch {
+      errors.set(id, { completed }); // survives overlay discard; do not throw to <Errored>
+    } finally {
+      refresh(todos);
+    }
+  });
+  return [todos, { toggleTodo }] as const;
+}
+// invoke from an event handler: onClick={() => void toggleTodo(id, checked)}
 ```
+
+Three layers, in this order: durable source → ephemeral UI that must survive
+rollback (the `errors` map, folded in the projection) → optimistic overlay
+(`pending`, the predicted `completed`). Consumers read one store. Catch
+*expected* mutation failures in the action so a toggle error does not blank the
+list through `<Errored>`; unhandled projection/render errors still reach the
+boundary.
 
 Ordinary signal/store writes inside an action are held until it settles. Never call
 `flush()` inside an action. Invoke actions from handlers, not from component/computation bodies.
@@ -356,7 +441,8 @@ handler or the `action`.
 
 `createOptimistic` / `createOptimisticStore` are for a tentative value during an
 active mutation, not a local editing session (use a writable derivation or a plain
-store for that).
+store for that). A whole-form `createOptimistic(false)` saving flag is fine; prefer
+`pending` on the record when the affordance is per item.
 
 **`yield`, not a bare `await`, is the transaction boundary.** `await api.save()` then
 `setTodos(...)` *runs*, but the write commits immediately and optimistic rollback is lost.
@@ -715,9 +801,32 @@ caller unwraps. JSON-encodable arguments only unless `enableRichArguments()`
 was called once in the client entry (`Date` / `Map` / `Set` throw without it).
 `GET()` is only for idempotent reads (URLs leak into logs/history);
 import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
+Cache GET reads with HTTP, not a hand-rolled Solid cache: the caller still
+receives the value; headers ride the transport.
+
+```ts
+import { respond } from '@solidjs/web';
+import { GET } from '@solidjs/web/server-functions';
+
+export const fetchStory = GET(async (id: number) => {
+  'use server';
+  const story = await db.stories.find(id);
+  return respond(story, {
+    headers: { 'cache-control': 'public, max-age=60, s-maxage=300' },
+  });
+});
+```
+
 `live()` yields **current state** (each yield replaces the last); do not treat
 it as an append-only event log, and hoist the memo so consumers share one
-connection.
+connection. Wire status is a side channel, not a field in the value:
+
+```ts
+source.onstatus = (next) => setStatus(next); // "connected" | "reconnecting" | "closed"
+```
+
+Do not yield `{ price, connected: true }`. After the first successful connection,
+transient failures retry with exponential backoff; a 4xx is a definite rejection.
 Unscripted forms: `<form method="post" action={createTodo.url}>` (the reference
 `.url`), not a client `preventDefault` + `fetch`, and not a hand-built
 `/_server/` URL. GET forms (`method="get" action={search.url}`) are only for
@@ -763,7 +872,7 @@ how to reuse. Prefer the form on the right.
 | `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
 | `setHandler(fn)` to store a function | `setHandler(() => fn)` (otherwise `fn` is an updater) |
 | `{user() ? <P user={user()!} /> : <SignIn />}` | `<Show when={user()}>{(u) => <P user={u()} />}</Show>` |
-| `<Child user={user()} />` for an async memo | `<Child user={user} />` and read `props.user()` under the child's `<Loading>` |
+| `const u = user(); return <Child user={u} />` / `<Child user={user} />` + `props.user()` as the default | `<Child user={user()} />` and `{props.user.name}` under `<Loading>` — passing isn't reading; types stay `User`. Pass the memo itself only when the child must `refresh` / `isPending` / `latest` that source |
 | `lazy(() => import("./p").then((m) => ({ default: m.About })))` | `lazy(() => import("./p"), { export: "About" })` |
 | `dangerouslySetInnerHTML={{ __html }}` | `innerHTML={html()}` (sanitized); never with JSX children |
 | `onClick={setCount}` | `onClick={() => setCount((c) => c + 1)}` |
@@ -811,7 +920,14 @@ how to reuse. Prefer the form on the right.
 | `window.location.href = ...` / `history.pushState` | `useNavigate()` or `<a href={Router.paths...}>` |
 | `httpStatus(404)` in a click handler | call it bare in the component / error-fallback body (a scope declaration, not a mutation) |
 | `try { user() } catch (e) { /* NotReadyError */ }` | `<Loading>` — app code should not catch `NotReadyError` |
-| `{latest(() => results())}` as the visible list | settled read + `isPending()` for the indicator; `latest` is for previews |
+| `{latest(() => results())}` as the visible list | settled read + `isPending()` for the indicator; `latest` is for previews. Exception: `latest(selectedId)` when the highlight should move before content swaps |
+| `<Comments />` nested under `{story().title}` assumed to waterfall | both mount immediately and fetch in parallel if the child reads an already-known id; a real waterfall is `createMemo(() => fetchAuthor(story().authorId))` or `storyId={props.story.id}` |
+| `<Errored>` as a terminal ErrorBoundary; `reset={() => location.reload()}` | the boundary heals when the source succeeds again; `reset` retries collected *sources*, not a UI remount |
+| `<Errored>` around a list catching a toggle/save failure | catch expected mutation failures in the `action`; keep row errors in a map the projection folds in (survives overlay discard) |
+| `yield { ...tick, connected: true }` from `live()` | yield the value; wire status is `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`) |
+| sibling `<Loading>` fallbacks stacking as popcorn | `<Reveal collapsed>` (sequential default) suppresses tail skeletons past the frontier |
+| in-memory cache around a GET server function | `return respond(value, { headers: { "cache-control": "..." } })` — metadata rides HTTP, the value rides the graph |
+| `story()?.title` / treating `story()` as `Story \| undefined` | `{story().title}` under `<Loading>` — if the computation is running, the value is there |
 | `typeof window !== "undefined"` | `isServer` / `isDev` from `@solidjs/web` |
 | `Object.assign({}, props)` / expecting `merge` to skip `undefined` like 1.x `mergeProps` | `omit` / `merge` — explicit `undefined` **overrides** (Object.assign) |
 | `isPending(user())` / `latest(user())` | `isPending(user)` / `latest(user)` — pass the accessor (or `() => user()`). Calling it first evaluates the read before the helper runs |
@@ -869,23 +985,24 @@ function Field(props: { label: string; class?: string }) {
 ```
 
 ```tsx
-// WRONG — user() throws not-ready at Page; child's <Loading> never sees it
+// WRONG — extracting at the parent is a real read; child's <Loading> never sees it
 function Page() {
   const user = createMemo(async () => (await fetch('/api/me')).json());
-  return <Profile user={user()} />;
+  const current = user();
+  return <Profile user={current} />;
 }
 
-// CORRECT — pass the accessor; read it under the boundary that owns the fallback
-function Profile(props: { user: Accessor<User> }) {
+// CORRECT — JSX props are lazy (passing isn't reading); types stay User
+function Profile(props: { user: User }) {
   return (
     <Loading fallback={<p>Loading…</p>}>
-      <h1>{props.user().name}</h1>
+      <h1>{props.user.name}</h1>
     </Loading>
   );
 }
 function Page() {
   const user = createMemo(async () => (await fetch('/api/me')).json());
-  return <Profile user={user} />;
+  return <Profile user={user()} />;
 }
 ```
 
@@ -961,16 +1078,21 @@ always-applied rules installed alongside this skill.
       an effect calling the setter.
 - [ ] Event handlers wrap setters (`onClick={() => setX(...)}`), use `currentTarget`,
       and `onInput` for keystrokes. `innerHTML` is sanitized and not mixed with children.
-- [ ] Async memos are passed as accessors (`user={user}`), not `user={user()}`, so
-      `<Loading>` around the *read* can catch not-ready.
+- [ ] Async memos are passed as values (`user={user()}`); JSX props are lazy.
+      `<Loading>` wraps the *read* (`props.user.name`), not the memo, not chrome.
+      Extracting `const u = user()` at the parent is the read that throws. Nested
+      child fetches run in parallel; a real waterfall is `fetchB(a().id)`.
 - [ ] Lists via `<For>` (server/refetched rows keyed by stable id), conditionals via
       ternary/`<Show>`; no `{list().map(...)}` in JSX; no `key` props; no `value()!`.
 - [ ] Effects are two-phase and only at imperative boundaries; apply does not read stores.
 - [ ] Async reads sit under `<Loading>` (the data slot, not chrome); errors under `<Errored>`.
       Reactive inputs of an async memo are read before the first `await`. No hand-rolled
       `loading`/`error` signals or `=== undefined` readiness branches. First load is
-      `<Loading>`; refetch indicator is `isPending(user)` (the accessor, not `user()`).
-      Core `refresh(source)`, router `revalidate(key)`, and `return reload(...)` are
+      `<Loading>`; refetch indicator is `isPending(user)` (the accessor, not `user()`)
+      or `isPending(selectedId)` when the write is the question. `<Errored>` heals
+      when the source succeeds; `reset` retries sources, not a UI remount. Per-row
+      mutation failures stay in the action/projection, not in `<Errored>` around
+      the list. Core `refresh(source)`, router `revalidate(key)`, and `return reload(...)` are
       different APIs — do not mix them.
 - [ ] External collections reconcile into stores (function-form `createStore` /
       `reconcile`), never wholesale draft assignment or `setTodos((t) => t.filter(...))`

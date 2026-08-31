@@ -75,20 +75,28 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    array from the setter (`setTodos((t) => t.filter(...))`) *renders* but is unkeyed — same
    identity loss as wholesale assignment; mutate the draft or `reconcile`. Stores are
    **property reads** (`todos.length`, `todo.title`), not accessors — never `todos()`.
-10. **Async data is an async computation**: `createMemo(async () => ...)` read under
-    `<Loading>` / `<Errored>` boundaries. Read every reactive input **before the first
+10. **Async data is an async computation**: `createMemo(async () => ...)` (or
+    `createMemo(() => fetchUser(id()))`) read under `<Loading>` / `<Errored>`.
+    **Fetch high, block low** — create the memo early, wrap only the read with
+    `<Loading>`. Nested trees fetch in parallel; a real waterfall looks like
+    `fetchB(a().id)`. JSX component props are lazy (passing isn't reading):
+    `<Child user={user()} />` then `{props.user.name}` under the child's
+    `<Loading>` is the colorless form (types stay `User`, not `User | undefined`).
+    `const u = user()` at the parent *is* a read and throws/snapshots there.
+    Pass the memo itself only when the child must `refresh` / `isPending` /
+    `latest` that source. Read every reactive input **before the first
     `await`** — post-`await` reads do not subscribe, and in production the computation can
     sit pending with no retry. No `useEffect` + `setState` fetching, no `createResource`.
     `<Loading>` wraps the data slot, not page chrome. After first paint it keeps content
     during refetch (`isPending` for the indicator). Use `on={id()}` (the *value*, not the
-    accessor) only when that identity change should show the fallback again. Pass an async
-    memo to a child as the **accessor** (`user={user}`), and read `props.user()` under that
-    child's `<Loading>` — `user={user()}` throws not-ready at the parent, so the child's
-    boundary never sees it. Do not start `fetch` (or any request) at component-body top
+    accessor) only when that identity change should show the fallback again. Do not start `fetch` (or any request) at component-body top
     level — that runs once at mount and is not a reactive source. Do not `try/catch` `NotReadyError` around a read, and do not
     use `loadingValue` / `seedLoadingValue` as the default first-flight UI — those skip
-    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer. `isPending`
-    is the *refetch* indicator after a settled answer exists — do not use it as the
+    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer — except
+    `latest(selectedId)` when the highlight should move before content swaps.
+    `isPending` is a question, not state: ask it of the async memo *or* of the
+    write (`isPending(selectedId)`), even when the fetch lives in a child. It is
+    the *refetch* indicator after a settled answer exists — do not use it as the
     first-load spinner (`<Loading>` owns that). Pass the accessor: `isPending(user)`,
     not `isPending(user())` (that evaluates the read before `isPending` runs).
     "Prop with local edits" = writable derivation:
@@ -143,8 +151,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     integration layers. Model async as a computation (return a promise or async iterable
     from a memo/store) and let the framework own the states: first load = `<Loading>`
     fallback; refetch indicator = `isPending()`; errors = thrown into the graph and caught
-    by `<Errored>`; speculative value = `latest()`. Mechanically enforced by
-    `solid2-kit check` (loading-signal naming, zero-arg-call undefined checks).
+    by `<Errored>`; speculative value = `latest()`. `<Errored>` is graph status, not a
+    terminal React ErrorBoundary: it heals when the source succeeds again (refresh,
+    live reconnect, input change). `reset` retries the collected *sources*, not a UI
+    remount. Per-row mutation failures belong in an errors map the projection folds
+    in (survives the optimistic overlay), not in `<Errored>` around the whole list.
+    Mechanically enforced by `solid2-kit check` (loading-signal naming, zero-arg-call undefined checks).
 19. **Refetch is `refresh(source)`** — rarely needed, but when it is, never fake it with a
     counter/version signal read inside the computation. Input-driven refetch is automatic
     (tracked inputs re-run the computation) and subscriptions push. Legit uses: after a
@@ -167,9 +179,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 22. Miscellaneous defaults: SSR-stable element ids come from `createUniqueId()` (never
     `Math.random()` or hardcoded duplicates); pass store data to `structuredClone` /
     `postMessage` / logs via `snapshot(store)` (proxies fail or leak reactivity); render
-    modals/tooltips/overlays through `<Portal>` from `@solidjs/web`; mutations whose writes
+    modals/tooltips/overlays through `<Portal>` from `@solidjs/web`;     mutations whose writes
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
-    except reactive clients (e.g. Convex) whose subscriptions already push authoritative
+    the sync mutation *is* the prediction (an overlay, discarded on settle); put
+    `pending` on the record rather than a second copy of state. Except reactive clients (e.g. Convex) whose subscriptions already push authoritative
     state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`) — run `solid2-kit doctor`
     after touching `package.json` / tsconfig / root configs; it fails on React and Solid 1.x
@@ -230,11 +243,15 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`. A static
     `<title>` in the document shell is the fallback; do not hardcode other tags
     (`<meta name="description">`) that Solid Meta should manage.
-    Return `respond(value, { status })` from a `"use server"` function, not
+    Return `respond(value, { status, headers })` from a `"use server"` function, not
     `Response.json` — a raw `Response` is HTTP-handler control flow; scripted
-    callers should receive the value. JSON-encodable server-function arguments
+    callers should receive the value. Cache GET reads with `Cache-Control` on that
+    response, not a hand-rolled Solid cache. JSON-encodable server-function arguments
     only, unless `enableRichArguments()` was called once in the client entry
-    (`Date` / `Map` / `Set` throw without it).
+    (`Date` / `Map` / `Set` throw without it). `live()` connection state is
+    `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`), never a
+    field in the yielded value. Sibling `<Loading>` reveal order is `<Reveal>`
+    (`collapsed` suppresses tail skeletons under sequential order).
 
 ## Lint heritage: eslint-plugin-solid (Solid 1.x) intents carried into this file
 
