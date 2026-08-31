@@ -249,13 +249,18 @@ const [signInError, setSignInError] = createSignal<string | null>(() => {
 
 ### Async data — fetch high, block low
 
-Where you create a value is a performance decision. Where you block on it is a
-design decision. Neither is an architecture decision: JSX component props are
-lazy (**passing isn't reading**), so intermediates do not wait, and nested
-components mount immediately so their fetches run in parallel.
+Creating and reading an async value are the same as sync. **Consuming** (the
+await) is a DX choice; **blocking** (the boundary) is a UX choice. Solid
+unwelds them: where you create the memo is performance, where `<Loading>`
+wraps the *read* is design, and neither is an architecture decision. JSX
+component props are lazy (**passing isn't reading**), so intermediates do
+not wait. Nested components mount immediately — they do not suspend — so
+their fetches run in parallel. Making a value remote should touch the memo
+and the boundary, not every file on the path, and should not change prop
+types to `Promise<User>` or `Accessor<User>`.
 
 ```tsx
-import { Errored, For, Loading, createMemo, createSignal, isPending, latest } from 'solid-js';
+import { Errored, Loading, createMemo, createSignal, isPending } from 'solid-js';
 
 function App() {
   const [selectedId, setSelectedId] = createSignal(1);
@@ -263,7 +268,8 @@ function App() {
 
   return (
     <Errored fallback={(error, reset) => <ErrorFallback error={error} reset={reset} />}>
-      <StoryList selectedId={latest(selectedId)} onSelect={setSelectedId} />
+      {/* Default: highlight holds with the old content (consistent UI). */}
+      <StoryList selectedId={selectedId()} onSelect={setSelectedId} />
       <main class={{ pending: isPending(selectedId) }}>
         <Loading fallback={<DetailSkeleton />}> {/* block low — the read, not chrome */}
           <StoryDetail story={story()} storyId={selectedId()} />
@@ -277,7 +283,7 @@ function StoryDetail(props: { story: Story; storyId: number }) {
   // Colorless derivation: no await, no Promise type. The memo becomes async itself.
   const byline = () => `${props.story.author} · ${props.story.points} points`;
   return (
-    <article>
+    <article class={{ stale: isPending(() => props.story) }}>
       <h1>{props.story.title}</h1>
       <p>{byline()}</p>
       <Comments storyId={props.storyId} />
@@ -297,14 +303,20 @@ every layout in between) renders immediately. The wait happens when
 const current = story();
 return <StoryDetail story={current} />;
 
-// Fine, but not the default — pass the memo only when the child must
-// refresh / isPending / latest that source
+// WRONG — Promise / Accessor types on the path. Making story remote is not a
+// type change for StoryLayout / StoryDetail.
+function StoryDetail(props: { story: Promise<Story> }) { /* ... */ }
+function StoryDetail(props: { story: Accessor<Story> }) { /* ... */ }
+
+// Fine — pass the memo itself only when the child must refresh() that source.
+// isPending / latest are questions: they work on the value prop too.
 return <StoryDetail story={story} />;
 ```
 
 - The `<Loading>` boundary must be an owner ancestor of the **read**, not of
   where the memo was created, and not of page chrome (header/nav) that should stay mounted.
-  Lifting the fetch does **not** mean lifting the boundary. After first paint the
+  Lifting the fetch does **not** mean lifting the boundary — that is consume glued
+  back onto block. After first paint the
   boundary keeps settled content during refetch; `isPending(results)` (pass the accessor,
   not `isPending(results())`) is the indicator. Use `on={query()}` (the **value**, not the
   accessor `on={query}`) only when that identity should put the fallback back on screen.
@@ -312,11 +324,19 @@ return <StoryDetail story={story} />;
 - **Nesting is not a waterfall.** `Comments` above fetches in parallel with `story`
   because it reads `props.storyId` (already known), not `props.story`. Passing
   `storyId={props.story.id}` *would* wait on the story fetch — that is a real data
-  dependency, same as `createMemo(() => fetchAuthor(story().authorId))`.
-- `isPending` is a question, not state — ask it of the async memo *or* of the write
-  that started the work (`isPending(selectedId)`), even when the fetch lives in a
-  child. `latest(selectedId)` is the in-flight selection when the highlight should
-  move before content swaps. The default hold keeps selection and content consistent.
+  dependency, same as `createMemo(() => fetchAuthor(story().authorId))`. Components
+  do not suspend; they run once. Only the expressions that read wait, so a parent
+  JSX read does not delay a child that does not need that value.
+- `isPending` is a **per-expression question**, not state and not a global spinner.
+  Ask it anywhere: on the async source (`isPending(results)`), below it
+  (`isPending(() => props.story)`), on a derived memo (`isPending(byline)`), or
+  *above* the fetch but below the write (`isPending(selectedId)`), even when the
+  fetch lives in a child. You do not need to pass the memo accessor just to ask.
+- Default navigation **holds**. `selectedId()` and the old story stay put until
+  the new answer lands, so the highlight never points at the wrong content.
+  `latest(selectedId)` is the opt-in when the design wants the highlight to move
+  on click. Pair `class={{ pending: isPending(selectedId) }}` with a short CSS
+  `transition-delay` so fast swaps do not flash.
 - Read every reactive input **before the first `await`** in an async computation. A read
   after `await` does not subscribe; production can sit pending with no retry.
 - `<Errored>` function fallbacks receive an error **accessor** and a `reset` callback:
@@ -872,7 +892,7 @@ how to reuse. Prefer the form on the right.
 | `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
 | `setHandler(fn)` to store a function | `setHandler(() => fn)` (otherwise `fn` is an updater) |
 | `{user() ? <P user={user()!} /> : <SignIn />}` | `<Show when={user()}>{(u) => <P user={u()} />}</Show>` |
-| `const u = user(); return <Child user={u} />` / `<Child user={user} />` + `props.user()` as the default | `<Child user={user()} />` and `{props.user.name}` under `<Loading>` — passing isn't reading; types stay `User`. Pass the memo itself only when the child must `refresh` / `isPending` / `latest` that source |
+| `const u = user(); return <Child user={u} />` / `user: Promise<User>` / `user: Accessor<User>` as the default | `<Child user={user()} />` and `{props.user.name}` under `<Loading>` — types stay `User`. Pass the memo itself only when the child must `refresh()` that source. `isPending(() => props.user)` works on the value |
 | `lazy(() => import("./p").then((m) => ({ default: m.About })))` | `lazy(() => import("./p"), { export: "About" })` |
 | `dangerouslySetInnerHTML={{ __html }}` | `innerHTML={html()}` (sanitized); never with JSX children |
 | `onClick={setCount}` | `onClick={() => setCount((c) => c + 1)}` |
@@ -920,7 +940,11 @@ how to reuse. Prefer the form on the right.
 | `window.location.href = ...` / `history.pushState` | `useNavigate()` or `<a href={Router.paths...}>` |
 | `httpStatus(404)` in a click handler | call it bare in the component / error-fallback body (a scope declaration, not a mutation) |
 | `try { user() } catch (e) { /* NotReadyError */ }` | `<Loading>` — app code should not catch `NotReadyError` |
-| `{latest(() => results())}` as the visible list | settled read + `isPending()` for the indicator; `latest` is for previews. Exception: `latest(selectedId)` when the highlight should move before content swaps |
+| `{latest(() => results())}` as the visible list | settled read + `isPending()` for the indicator; `latest` is for previews |
+| `selectedId={latest(selectedId)}` as the default highlight | `selectedId={selectedId()}` so highlight and content stay consistent; `latest` only when the highlight should move first |
+| `isPending` on a root/global pending signal, or wrapping the whole shell | ask the question at the design site (dimmed list, disabled button, pane). It works on the source, a derived prop, or the write |
+| `<Loading>` glued to the `createMemo` (consume + block in one place) | fetch high, block low — the boundary wraps the read, not the creation |
+| `class={{ pending: isPending(id) }}` flashing on every navigation | same class + a short CSS `transition-delay` so only slow swaps show |
 | `<Comments />` nested under `{story().title}` assumed to waterfall | both mount immediately and fetch in parallel if the child reads an already-known id; a real waterfall is `createMemo(() => fetchAuthor(story().authorId))` or `storyId={props.story.id}` |
 | `<Errored>` as a terminal ErrorBoundary; `reset={() => location.reload()}` | the boundary heals when the source succeeds again; `reset` retries collected *sources*, not a UI remount |
 | `<Errored>` around a list catching a toggle/save failure | catch expected mutation failures in the `action`; keep row errors in a map the projection folds in (survives overlay discard) |
@@ -1079,9 +1103,12 @@ always-applied rules installed alongside this skill.
 - [ ] Event handlers wrap setters (`onClick={() => setX(...)}`), use `currentTarget`,
       and `onInput` for keystrokes. `innerHTML` is sanitized and not mixed with children.
 - [ ] Async memos are passed as values (`user={user()}`); JSX props are lazy.
-      `<Loading>` wraps the *read* (`props.user.name`), not the memo, not chrome.
-      Extracting `const u = user()` at the parent is the read that throws. Nested
-      child fetches run in parallel; a real waterfall is `fetchB(a().id)`.
+      Types stay `User` — not `Promise<User>` / `Accessor<User>`. `<Loading>` wraps
+      the *read*, not the memo, not chrome. Extracting `const u = user()` at the
+      parent is the read that throws. Nested child fetches run in parallel
+      (components do not suspend); a real waterfall is `fetchB(a().id)`.
+      `isPending` is per-expression (`isPending(() => props.story)` works);
+      `latest(selectedId)` is opt-in, not the default highlight.
 - [ ] Lists via `<For>` (server/refetched rows keyed by stable id), conditionals via
       ternary/`<Show>`; no `{list().map(...)}` in JSX; no `key` props; no `value()!`.
 - [ ] Effects are two-phase and only at imperative boundaries; apply does not read stores.

@@ -19,7 +19,10 @@ Steps:
    - `<For>` over server/refetched rows without a stable-id key function;
    - `<Loading>`/`<Errored>` wrapping page chrome instead of the data slot, or
      `const u = user()` extracted then passed (a real parent-side read). Passing
-     `user={user()}` is the colorless form — do not "fix" it into accessors;
+     `user={user()}` is the colorless form — do not "fix" it into accessors or
+     `Promise<User>` props;
+   - `latest(selectedId)` as the default highlight (hold is the default);
+     `isPending` treated as a global spinner instead of a per-expression question;
    - treating `<Errored>` as a terminal ErrorBoundary, or routing per-row mutation
      failures through it (those belong in the action / a projection-folded map);
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;

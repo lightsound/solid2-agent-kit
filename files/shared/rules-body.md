@@ -77,14 +77,17 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    **property reads** (`todos.length`, `todo.title`), not accessors — never `todos()`.
 10. **Async data is an async computation**: `createMemo(async () => ...)` (or
     `createMemo(() => fetchUser(id()))`) read under `<Loading>` / `<Errored>`.
-    **Fetch high, block low** — create the memo early, wrap only the read with
-    `<Loading>`. Nested trees fetch in parallel; a real waterfall looks like
-    `fetchB(a().id)`. JSX component props are lazy (passing isn't reading):
+    **Fetch high, block low** — creating/reading are like sync; consuming (await)
+    and blocking (the boundary) are independent. Create the memo early, wrap only
+    the read with `<Loading>`. Do not glue the boundary to the memo, and do not
+    retarget intermediate props to `Promise<User>` / `Accessor<User>` — types stay
+    `User`. Nested trees do not suspend: they fetch in parallel; a real waterfall
+    looks like `fetchB(a().id)`. JSX component props are lazy (passing isn't reading):
     `<Child user={user()} />` then `{props.user.name}` under the child's
-    `<Loading>` is the colorless form (types stay `User`, not `User | undefined`).
-    `const u = user()` at the parent *is* a read and throws/snapshots there.
-    Pass the memo itself only when the child must `refresh` / `isPending` /
-    `latest` that source. Read every reactive input **before the first
+    `<Loading>` is the colorless form. `const u = user()` at the parent *is* a
+    read and throws/snapshots there. Pass the memo itself only when the child
+    must `refresh()` that source — `isPending(() => props.user)` works on the
+    value. Read every reactive input **before the first
     `await`** — post-`await` reads do not subscribe, and in production the computation can
     sit pending with no retry. No `useEffect` + `setState` fetching, no `createResource`.
     `<Loading>` wraps the data slot, not page chrome. After first paint it keeps content
@@ -92,10 +95,14 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     accessor) only when that identity change should show the fallback again. Do not start `fetch` (or any request) at component-body top
     level — that runs once at mount and is not a reactive source. Do not `try/catch` `NotReadyError` around a read, and do not
     use `loadingValue` / `seedLoadingValue` as the default first-flight UI — those skip
-    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer — except
-    `latest(selectedId)` when the highlight should move before content swaps.
-    `isPending` is a question, not state: ask it of the async memo *or* of the
-    write (`isPending(selectedId)`), even when the fetch lives in a child. It is
+    `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer.
+    Default navigation holds: keep `selectedId()` so highlight and content stay
+    consistent; `latest(selectedId)` only when the highlight should move first.
+    Pair `class={{ pending: isPending(selectedId) }}` with a short CSS
+    `transition-delay` so fast swaps do not flash.
+    `isPending` is a per-expression question, not a global spinner: ask it of the
+    async source, a derived prop (`isPending(() => props.story)`), or the write
+    (`isPending(selectedId)`), even when the fetch lives in a child. It is
     the *refetch* indicator after a settled answer exists — do not use it as the
     first-load spinner (`<Loading>` owns that). Pass the accessor: `isPending(user)`,
     not `isPending(user())` (that evaluates the read before `isPending` runs).
