@@ -68,6 +68,7 @@ const REQUIRED_APIS = [
   'useParams',
   'redirect',
   'reload',
+  'handleRequest',
   'respond',
   'enableRichArguments',
   'markSafeError',
@@ -95,7 +96,7 @@ const BANNED_CREATE = new Set([
 
 // User-defined custom primitives that appear in kit examples (idiomatically
 // named create*) but are not Solid APIs.
-const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo']);
+const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo', 'createTodos']);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
