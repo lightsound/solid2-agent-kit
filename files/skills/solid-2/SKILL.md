@@ -85,7 +85,7 @@ import { createSignal } from 'solid-js';
 
 function Counter() {
   const [count, setCount] = createSignal(0);
-  const doubled = () => count() * 2;
+  const doubled = () => count() * 2; // derivation: a function, not a memo, not an effect
 
   return (
     <button onClick={() => setCount((c) => c + 1)}>
@@ -98,11 +98,13 @@ function Counter() {
 ### Props: read late, never destructure
 
 ```tsx
+// CORRECT — reads happen inside JSX (a tracking scope)
 function Greeting(props: { name: string; punctuation?: string }) {
   return <p>Hello, {props.name}{props.punctuation ?? '.'}</p>;
 }
 
-function Greeting({ name }: { name: string }) {}
+// WRONG — reads the getter once at setup; never updates again
+function Greeting({ name }: { name: string }) { /* ... */ }
 ```
 
 To give a derived prop a local name, name the *function* (or `createMemo` if expensive):
@@ -127,7 +129,7 @@ import { createStore } from 'solid-js';
 const [profile, setProfile] = createStore({ name: 'Ada', role: 'Engineer' });
 
 setProfile((draft) => {
-  draft.name = 'Grace';
+  draft.name = 'Grace'; // only readers of .name re-run
 });
 ```
 
@@ -210,10 +212,10 @@ use `dynamic()` so the component identity stays stable.
 import { createEffect } from 'solid-js';
 
 createEffect(
-  () => props.roomId,
-  (roomId) => {
+  () => props.roomId,          // compute: ALL reactive reads here; return value feeds apply
+  (roomId) => {                // apply: untracked imperative work
     const connection = chat.connect(roomId);
-    return () => connection.close();
+    return () => connection.close(); // cleanup before next run / on disposal
   },
 );
 ```
@@ -229,6 +231,7 @@ form of a writable derivation replaces it, and moves the source read to the read
 (under that site's boundaries) instead of an effect compute:
 
 ```tsx
+// WRONG — signal synced by an effect; organizer() errors bypass the read site's <Errored>
 const [signInError, setSignInError] = createSignal<string | null>(null);
 createEffect(
   () => organizer(),
@@ -237,6 +240,7 @@ createEffect(
   },
 );
 
+// CORRECT — writable derivation: resets when organizer() changes; the setter still works
 const [signInError, setSignInError] = createSignal<string | null>(() => {
   organizer();
   return null;
@@ -260,13 +264,14 @@ import { Errored, Loading, createMemo, createSignal, isPending } from 'solid-js'
 
 function App() {
   const [selectedId, setSelectedId] = createSignal(1);
-  const story = createMemo(() => fetchStory(selectedId()));
+  const story = createMemo(() => fetchStory(selectedId())); // fetch high
 
   return (
     <Errored fallback={(error, reset) => <ErrorFallback error={error} reset={reset} />}>
+      {/* Default: highlight holds with the old content (consistent UI). */}
       <StoryList selectedId={selectedId()} onSelect={setSelectedId} />
       <main class={{ pending: isPending(selectedId) }}>
-        <Loading fallback={<DetailSkeleton />}>
+        <Loading fallback={<DetailSkeleton />}> {/* block low — the read, not chrome */}
           <StoryDetail story={story()} storyId={selectedId()} />
         </Loading>
       </main>
@@ -275,6 +280,7 @@ function App() {
 }
 
 function StoryDetail(props: { story: Story; storyId: number }) {
+  // Colorless derivation: no await, no Promise type. The memo becomes async itself.
   const byline = createMemo(() => `${props.story.author} · ${props.story.points} points`);
   return (
     <article class={{ stale: isPending(() => props.story) }}>
@@ -293,12 +299,17 @@ every layout in between) renders immediately. The wait happens when
 `props.story.title` is read, under that `<Loading>`.
 
 ```tsx
+// WRONG — extracting at the parent is a real read; child's <Loading> never sees it
 const current = story();
 return <StoryDetail story={current} />;
 
-function StoryDetail(props: { story: Promise<Story> }) {}
-function StoryDetail(props: { story: Accessor<Story> }) {}
+// WRONG — Promise / Accessor types on the path. Making story remote is not a
+// type change for StoryLayout / StoryDetail.
+function StoryDetail(props: { story: Promise<Story> }) { /* ... */ }
+function StoryDetail(props: { story: Accessor<Story> }) { /* ... */ }
 
+// Fine — pass the memo itself only when the child must refresh() that source.
+// isPending / latest are questions: they work on the value prop too.
 return <StoryDetail story={story} />;
 ```
 
@@ -405,7 +416,7 @@ import { action, createOptimisticStore, refresh } from 'solid-js';
 
 type Todo = { id: string; title: string; completed: boolean; pending?: boolean; error?: { completed: boolean } };
 
-function createTodos() {
+function createTodos() { // call from a component — not module scope (SSR shares modules)
   const errors = new Map<string, { completed: boolean }>();
   const [todos, setTodos] = createOptimisticStore<Todo[]>(async () => {
     const current = await api.list();
@@ -426,13 +437,14 @@ function createTodos() {
       yield api.toggle(id, completed);
       errors.delete(id);
     } catch {
-      errors.set(id, { completed });
+      errors.set(id, { completed }); // survives overlay discard; do not throw to <Errored>
     } finally {
       refresh(todos);
     }
   });
   return [todos, { toggleTodo }] as const;
 }
+// invoke from an event handler: onClick={() => void toggleTodo(id, checked)}
 ```
 
 Three layers, in this order: durable source → ephemeral UI that must survive
@@ -481,10 +493,13 @@ a different API (URL + POST) — see [App stack](#app-stack-only-if-the-project-
 ### Lists: `<For>` child signatures per keying mode
 
 ```tsx
+// Default (keyed by item reference): item is the RAW value, index is an accessor
 <For each={todos()}>{(todo, index) => <Row todo={todo} n={index()} />}</For>
 
+// Key function: BOTH are accessors
 <For each={todos()} keyed={(todo) => todo.id}>{(todo) => <Row todo={todo()} />}</For>
 
+// Positional (Solid 1.x <Index>): item is an accessor, index is a plain number
 <For each={cells()} keyed={false}>{(cell, i) => <Cell value={cell()} at={i} />}</For>
 ```
 
@@ -510,8 +525,10 @@ Ternaries work and are reactive, but **when the truthy branch reads the tested v
 needed. Never write `value()!` to narrow by hand (`solid2-kit check` flags it):
 
 ```tsx
+// WRONG — hand narrowing with a non-null assertion
 {error() ? <p>{error()!.message}</p> : <TaskList />}
 
+// CORRECT — Show narrows; fallback holds the other branch
 <Show when={error()} fallback={<TaskList />}>
   {(err) => <p>{err().message}</p>}
 </Show>
@@ -519,7 +536,7 @@ needed. Never write `value()!` to narrow by hand (`solid2-kit check` flags it):
 
 ```tsx
 <Show when={user()} fallback={<SignIn />}>
-  {(currentUser) => <Profile user={currentUser()} />}
+  {(currentUser) => <Profile user={currentUser()} />} {/* narrowed ACCESSOR */}
 </Show>
 ```
 
@@ -568,7 +585,7 @@ function ThemeProvider(props: ParentProps) {
 }
 
 function ThemeButton() {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const { theme, setTheme } = useContext(ThemeContext); // destructuring here is FINE
   return <button onClick={() => setTheme('dark')}>{theme()}</button>;
 }
 ```
@@ -782,6 +799,7 @@ export const getUser = query(async (id: string) => {
 }, 'users');
 
 const user = createMemo(() => getUser(params.id));
+// after a mutation:
 revalidate(getUser.key);
 revalidate(getUser.keyFor('42'));
 ```
@@ -803,6 +821,7 @@ router `json()`, or `<FileRoutes />` (`fileRoutes(pageRoutes)` instead).
 ```ts
 export async function findUser(id: string) {
   'use server';
+  // validate `id`; read identity from getRequestEvent(), never from arguments
   return database.users.find(id);
 }
 ```
@@ -856,7 +875,7 @@ not a field in the value and not a property of the memo:
 
 ```ts
 const source = stockPrice("ACME");
-source.onstatus = (next) => setStatus(next);
+source.onstatus = (next) => setStatus(next); // "connected" | "reconnecting" | "closed"
 const price = createMemo(() => source);
 ```
 
@@ -1032,12 +1051,14 @@ how to reuse. Prefer the form on the right.
 | return a component from `"use server"` / flip `serverFunctions.components` | experimental preview — do not enable unless the project already has that flag |
 
 ```tsx
+// WRONG — post-await read never subscribes; production can hang pending
 const user = createMemo(async () => {
   const response = await fetch('/api/me');
   const extra = flag(); // too late
   return { ...(await response.json()), extra };
 });
 
+// CORRECT
 const user = createMemo(async () => {
   const extra = flag();
   const response = await fetch('/api/me');
@@ -1046,11 +1067,13 @@ const user = createMemo(async () => {
 ```
 
 ```tsx
+// WRONG — rest is a plain object snapshot
 function Field(props: { label: string; class?: string }) {
   const rest = { ...props };
   return <label>{props.label}<input {...rest} /></label>;
 }
 
+// CORRECT
 function Field(props: { label: string; class?: string }) {
   const rest = omit(props, 'label');
   return <label>{props.label}<input {...rest} /></label>;
@@ -1058,12 +1081,14 @@ function Field(props: { label: string; class?: string }) {
 ```
 
 ```tsx
+// WRONG — extracting at the parent is a real read; child's <Loading> never sees it
 function Page() {
   const user = createMemo(async () => (await fetch('/api/me')).json());
   const current = user();
   return <Profile user={current} />;
 }
 
+// CORRECT — JSX props are lazy (passing isn't reading); types stay User
 function Profile(props: { user: User }) {
   return (
     <Loading fallback={<p>Loading…</p>}>
@@ -1078,6 +1103,7 @@ function Page() {
 ```
 
 ```tsx
+// WRONG — two different `action`s; the core one is not a form URL
 import { action } from 'solid-js';
 const save = action(async function* (form: FormData) {
   yield persist(form);
@@ -1086,6 +1112,7 @@ const save = action(async function* (form: FormData) {
   <button type="submit">Save</button>
 </form>
 
+// CORRECT — router action is POST-addressable (only if `@solidjs/router` is in the project)
 import { action } from '@solidjs/router';
 const save = action(async (form: FormData) => persist(form), 'save');
 <form action={save} method="post">
@@ -1094,24 +1121,30 @@ const save = action(async (form: FormData) => persist(form), 'save');
 ```
 
 ```tsx
+// WRONG — evaluating JSX before the root exists
 import { render } from '@solidjs/web';
 render(<App />, document.getElementById('app')!);
 
+// CORRECT
 render(() => <App />, document.getElementById('app')!);
 ```
 
 ```tsx
+// WRONG — user() runs before isPending, so the helper never sees the accessor
 <article aria-busy={isPending(user())}>{user().name}</article>
 
+// CORRECT — pass the accessor (or () => user()); <Loading> still owns first flight
 <Loading fallback={<p>Loading…</p>}>
   <article aria-busy={isPending(user) ? 'true' : 'false'}>{user().name}</article>
 </Loading>
 ```
 
 ```tsx
+// WRONG — tab() is read once at setup; View never changes
 const View = tab() ? Detailed : Compact;
 return <View value="now" />;
 
+// CORRECT
 const View = dynamic(() => (tab() ? Detailed : Compact));
 return <View value="now" />;
 ```

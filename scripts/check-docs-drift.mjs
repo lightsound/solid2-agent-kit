@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+// Docs-drift guard: verifies every Solid 2.0 API this kit recommends still
+// exists in the official documentation corpus (llms-full.txt). Solid 2.0 is
+// young; if the docs rename or remove an API, this check fails so the kit
+// content gets updated instead of teaching agents stale names.
+//
+// Run: node scripts/check-docs-drift.mjs (also run weekly by CI)
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +13,10 @@ import { fileURLToPath } from 'node:url';
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CORPUS_URL = 'https://v2-rebuild--solid-docs-v2.netlify.app/llms-full.txt';
 
+// Non-create* APIs the kit content recommends. create* primitives are
+// auto-extracted from files/ below, so only list the rest here.
 const REQUIRED_APIS = [
+  // components / boundaries
   'Show',
   'For',
   'Repeat',
@@ -23,6 +32,7 @@ const REQUIRED_APIS = [
   'children',
   'lazy',
   'dynamic',
+  // reactivity / lifecycle
   'onSettled',
   'onCleanup',
   'isPending',
@@ -33,12 +43,14 @@ const REQUIRED_APIS = [
   'affects',
   'refresh',
   'resolve',
+  // stores
   'reconcile',
   'merge',
   'omit',
   'snapshot',
   'deep',
   'storePath',
+  // context / rendering
   'useContext',
   'useHead',
   'render',
@@ -70,6 +82,7 @@ const REQUIRED_APIS = [
   'HydrationScript',
 ];
 
+// Solid 1.x names that appear in kit content only as banned examples.
 const BANNED_CREATE = new Set([
   'createResource',
   'createMutable',
@@ -81,6 +94,8 @@ const BANNED_CREATE = new Set([
   'createAsyncStore',
 ]);
 
+// User-defined custom primitives that appear in kit examples (idiomatically
+// named create*) but are not Solid APIs.
 const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo', 'createTodos']);
 
 function* walk(dir) {
@@ -116,6 +131,11 @@ if (corpus.length < 10_000) {
 const createApis = extractCreateApis();
 const allApis = [...new Set([...createApis, ...REQUIRED_APIS])].sort();
 
+// Require a code-like occurrence, not a prose word: several APIs are common
+// English words (merge, action, deep, latest, resolve, render, flush) and a
+// plain \b word \b test would keep passing on prose even after the API was
+// removed from the docs. Accepted contexts: backticked (`name`), an import
+// or JSX position ({ name, <name), or a call (name().
 function appearsAsCode(name) {
   return new RegExp(`[\`{,<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
 }
