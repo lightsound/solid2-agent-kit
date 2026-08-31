@@ -163,6 +163,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     live reconnect, input change). `reset` retries the collected *sources*, not a UI
     remount. Per-row mutation failures belong in an errors map the projection folds
     in (survives the optimistic overlay), not in `<Errored>` around the whole list.
+    Making a client store "real" is additive: same setters, wrap mutations in
+    `action`, swap `createOptimisticStore` and a file of server functions — do
+    not rewrite `App.tsx` with loading/error branches.
     Mechanically enforced by `solid2-kit check` (loading-signal naming, zero-arg-call undefined checks).
 19. **Refetch is `refresh(source)`** — rarely needed, but when it is, never fake it with a
     counter/version signal read inside the computation. Input-driven refetch is automatic
@@ -186,10 +189,13 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 22. Miscellaneous defaults: SSR-stable element ids come from `createUniqueId()` (never
     `Math.random()` or hardcoded duplicates); pass store data to `structuredClone` /
     `postMessage` / logs via `snapshot(store)` (proxies fail or leak reactivity); render
-    modals/tooltips/overlays through `<Portal>` from `@solidjs/web`;     mutations whose writes
+    modals/tooltips/overlays through `<Portal>` from `@solidjs/web`; mutations whose writes
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
     the sync mutation *is* the prediction (an overlay, discarded on settle); put
-    `pending` on the record rather than a second copy of state. Except reactive clients (e.g. Convex) whose subscriptions already push authoritative
+    `pending` on the record rather than a second copy of state. Do not snapshot
+    and restore, disable optimistic rows until ack, mutex rapid clicks, or freeze
+    unrelated writes because one action is in flight; failed-action replay is
+    optional. Except reactive clients (e.g. Convex) whose subscriptions already push authoritative
     state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`) — run `solid2-kit doctor`
     after touching `package.json` / tsconfig / root configs; it fails on React and Solid 1.x
@@ -253,7 +259,19 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     Return `respond(value, { status, headers })` from a `"use server"` function, not
     `Response.json` — a raw `Response` is HTTP-handler control flow; scripted
     callers should receive the value. Cache GET reads with `Cache-Control` on that
-    response, not a hand-rolled Solid cache. JSON-encodable server-function arguments
+    response, not a hand-rolled Solid cache. HTTP does not enforce TypeScript —
+    validate inside the function; do not invent tRPC / type-gen / a schema layer.
+    Locals only the `"use server"` body reads (db, secrets) stay off the client.
+    During SSR the call is in-process (no HTTP). After a mutation, `reload` /
+    `revalidate` / single-flight — never a client `fetch` or an `onSettled` /
+    `hydrate` refetch to "refresh the page". In-flight Promises serialize as
+    Promises; `live()` embeds the first value in HTML and continues the stream on
+    the client. Do not delay `renderToStream` for visual order (`<Reveal>` owns
+    display). Do not write subscribe/unsubscribe around `live()`. Start-mode
+    production is `handleRequest(request)` / Fetchable `fetch`; platform Vite
+    plugins adopt that handler (Node: the template `server.js`). Do not return
+    components from `"use server"` unless the project already enabled the
+    experimental `serverFunctions.components` flag. JSON-encodable server-function arguments
     only, unless `enableRichArguments()` was called once in the client entry
     (`Date` / `Map` / `Set` throw without it). `live()` connection state is
     `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`), never a

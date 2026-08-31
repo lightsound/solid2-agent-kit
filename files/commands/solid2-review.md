@@ -26,6 +26,11 @@ Steps:
    - treating `<Errored>` as a terminal ErrorBoundary, or routing per-row mutation
      failures through it (those belong in the action / a projection-folded map);
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;
+   - rewriting App with loading/error branches (or a cache library) when wrapping
+     a client store in server functions; disabling optimistic rows until ack;
+   - tRPC / type-gen around `"use server"`, a client `fetch` after a mutation,
+     refetch in `hydrate`/`onSettled`, a custom Worker/Express adapter, or
+     delaying `renderToStream` for visual order (`<Reveal>` owns display);
    - store updates that rebuild objects/arrays instead of mutating the draft or reconciling;
    - context values passed as snapshots instead of accessors/setters/stores;
    - components with conditional/early returns on reactive values.

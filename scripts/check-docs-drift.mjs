@@ -68,6 +68,7 @@ const REQUIRED_APIS = [
   'useParams',
   'redirect',
   'reload',
+  'handleRequest',
   'respond',
   'enableRichArguments',
   'markSafeError',
