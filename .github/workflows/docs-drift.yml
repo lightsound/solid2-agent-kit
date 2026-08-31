@@ -16,19 +16,19 @@ jobs:
   drift:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
       - name: Cross-check kit APIs against official Solid 2.0 docs corpus
         run: node scripts/check-docs-drift.mjs
 
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
       - name: Kit tests (check gate, edit hooks, doctor, init merge)
         run: npm test
