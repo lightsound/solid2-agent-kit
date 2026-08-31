@@ -826,7 +826,10 @@ export async function findUser(id: string) {
 A function-level server function cannot close over component locals — pass
 values as arguments. Treat every argument as untrusted — TypeScript does not
 cross the HTTP boundary, so do not invent tRPC / a schema layer / type-gen;
-validate inside the function. Read trusted identity
+validate inside the function. These functions *are* the RPC — do not add an
+API-route file (or a Next `route.ts`) just to wrap `db.todos.insert`. API
+routes are for real HTTP endpoints (webhooks, third-party POST), not for the
+app talking to its own database. Read trusted identity
 from `getRequestEvent()`, never from a caller-supplied user id. During SSR the same
 reference runs in-process (no HTTP); in the browser it is HTTP. Anything
 referenced only inside the `"use server"` body (db client, secrets) never
@@ -884,7 +887,8 @@ Start-mode production is `handleRequest(request)` (or the default Fetchable
 `fetch`). Cloudflare / Netlify / Nitro Vite plugins adopt that handler — do not
 write a Solid adapter, a custom Worker, or a Netlify Function. For Node, use the
 official template `server.js` (web `Request` in, stream the response); do not
-invent an Express/Solid bridge. Server functions that return components
+invent an Express/Solid bridge. Request middleware is `start.middleware`
+(web `Request` + `next`), not Express `app.use`. Server functions that return components
 (`serverFunctions: { components: true }`) are experimental preview — do not use
 them unless the project already has that flag on.
 
@@ -1021,10 +1025,11 @@ how to reuse. Prefer the form on the right.
 | rewrite `App.tsx` with loading/error branches, snapshot/restore, or a cache library when the list moves to the server | same `setTodos`; wrap mutations in `action`; swap `createOptimisticStore` + a server-functions file. The overlay stays the source of truth |
 | disable an optimistic row until ack, or mutex rapid clicks / freeze unrelated writes | keep the control enabled; `action` is the transaction. An in-flight action does not freeze other writes. Failed-action replay is optional |
 | tRPC / type-gen / a schema layer around `"use server"` | TypeScript does not cross HTTP — validate inside the function. Locals only the body reads (db, secrets) stay off the client |
+| `src/routes/api/todos.ts` (or a Next `route.ts`) wrapping `db.todos.insert` | `"use server"` *is* the RPC. API routes are for real HTTP endpoints (webhooks), not the app's own mutations |
 | router/server mutation, then `fetch` / `onSettled` / `hydrate` to refresh the page | `reload` / `revalidate` / single-flight (the mutation response can seed destination preloads). In-flight Promises serialize as Promises; `live()` continues from HTML |
 | delay `renderToStream` so HTML arrives in visual order | stream as soon as ready; `<Reveal collapsed>` controls when content *appears* |
 | subscribe/unsubscribe (or a store wiring) around `live()` | `createMemo(() => stockPrice(symbol()))` — the memo owns the connection. First yield is `<Loading>`; later yields are updates |
-| a Solid adapter / custom Worker / Express bridge, or `entry-client.tsx` under `start: true` | `handleRequest(request)` / Fetchable `fetch`; platform plugins adopt it. Node: template `server.js`. Start mode: write `src/App.tsx` |
+| a Solid adapter / custom Worker / Express bridge, or `entry-client.tsx` under `start: true` | `handleRequest(request)` / Fetchable `fetch`; platform plugins adopt it. Node: template `server.js`. Start mode: write `src/App.tsx`. Middleware is `start.middleware`, not Express `app.use` |
 | `createMemo(async () => (await props.story).author)` | `createMemo(() => props.story.author)` — a derivation over an async value becomes async; no await, no Promise type |
 | return a component from `"use server"` / flip `serverFunctions.components` | experimental preview — do not enable unless the project already has that flag |
 

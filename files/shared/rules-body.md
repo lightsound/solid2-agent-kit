@@ -262,14 +262,16 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     response, not a hand-rolled Solid cache. HTTP does not enforce TypeScript —
     validate inside the function; do not invent tRPC / type-gen / a schema layer.
     Locals only the `"use server"` body reads (db, secrets) stay off the client.
-    During SSR the call is in-process (no HTTP). After a mutation, `reload` /
+    Do not add an API-route file just to wrap a database call — `"use server"`
+    is the RPC. During SSR the call is in-process (no HTTP). After a mutation, `reload` /
     `revalidate` / single-flight — never a client `fetch` or an `onSettled` /
     `hydrate` refetch to "refresh the page". In-flight Promises serialize as
     Promises; `live()` embeds the first value in HTML and continues the stream on
     the client. Do not delay `renderToStream` for visual order (`<Reveal>` owns
     display). Do not write subscribe/unsubscribe around `live()`. Start-mode
     production is `handleRequest(request)` / Fetchable `fetch`; platform Vite
-    plugins adopt that handler (Node: the template `server.js`). Do not return
+    plugins adopt that handler (Node: the template `server.js`). Request
+    middleware is `start.middleware`, not Express `app.use`. Do not return
     components from `"use server"` unless the project already enabled the
     experimental `serverFunctions.components` flag. JSON-encodable server-function arguments
     only, unless `enableRichArguments()` was called once in the client entry
