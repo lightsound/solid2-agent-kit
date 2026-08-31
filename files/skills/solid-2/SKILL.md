@@ -264,14 +264,13 @@ import { Errored, Loading, createMemo, createSignal, isPending } from 'solid-js'
 
 function App() {
   const [selectedId, setSelectedId] = createSignal(1);
-  const story = createMemo(() => fetchStory(selectedId())); // fetch high
+  const story = createMemo(() => fetchStory(selectedId()));
 
   return (
     <Errored fallback={(error, reset) => <ErrorFallback error={error} reset={reset} />}>
-      {/* Default: highlight holds with the old content (consistent UI). */}
       <StoryList selectedId={selectedId()} onSelect={setSelectedId} />
       <main class={{ pending: isPending(selectedId) }}>
-        <Loading fallback={<DetailSkeleton />}> {/* block low — the read, not chrome */}
+        <Loading fallback={<DetailSkeleton />}>
           <StoryDetail story={story()} storyId={selectedId()} />
         </Loading>
       </main>
@@ -280,7 +279,6 @@ function App() {
 }
 
 function StoryDetail(props: { story: Story; storyId: number }) {
-  // Colorless derivation: no await, no Promise type. The memo becomes async itself.
   const byline = createMemo(() => `${props.story.author} · ${props.story.points} points`);
   return (
     <article class={{ stale: isPending(() => props.story) }}>
@@ -437,14 +435,13 @@ function createTodos() { // call from a component — not module scope (SSR shar
       yield api.toggle(id, completed);
       errors.delete(id);
     } catch {
-      errors.set(id, { completed }); // survives overlay discard; do not throw to <Errored>
+      errors.set(id, { completed });
     } finally {
       refresh(todos);
     }
   });
   return [todos, { toggleTodo }] as const;
 }
-// invoke from an event handler: onClick={() => void toggleTodo(id, checked)}
 ```
 
 Three layers, in this order: durable source → ephemeral UI that must survive
@@ -875,7 +872,7 @@ not a field in the value and not a property of the memo:
 
 ```ts
 const source = stockPrice("ACME");
-source.onstatus = (next) => setStatus(next); // "connected" | "reconnecting" | "closed"
+source.onstatus = (next) => setStatus(next);
 const price = createMemo(() => source);
 ```
 
