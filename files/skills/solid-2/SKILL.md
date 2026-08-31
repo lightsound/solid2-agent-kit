@@ -281,7 +281,7 @@ function App() {
 
 function StoryDetail(props: { story: Story; storyId: number }) {
   // Colorless derivation: no await, no Promise type. The memo becomes async itself.
-  const byline = () => `${props.story.author} · ${props.story.points} points`;
+  const byline = createMemo(() => `${props.story.author} · ${props.story.points} points`);
   return (
     <article class={{ stale: isPending(() => props.story) }}>
       <h1>{props.story.title}</h1>
@@ -448,7 +448,7 @@ function createTodos() { // call from a component — not module scope (SSR shar
 ```
 
 Three layers, in this order: durable source → ephemeral UI that must survive
-rollback (the `errors` map, folded in the projection) → optimistic overlay
+overlay discard (the `errors` map, folded in the projection) → optimistic overlay
 (`pending`, the predicted `completed`). Consumers read one store. Catch
 *expected* mutation failures in the action so a toggle error does not blank the
 list through `<Errored>`; unhandled projection/render errors still reach the
@@ -457,9 +457,11 @@ boundary.
 Going from a client store to the server is **additive**: same `setTodos`
 calls, wrap each mutation in `action`, swap in `createOptimisticStore` and a
 file of server functions. Do not rewrite `App.tsx` with loading/error branches,
-do not snapshot-the-cache / write-a-prediction / restore-on-error, and do not
-introduce a cache library to "make it real". The sync mutation already was the
-prediction. Optimistic rows stay interactive — a not-yet-acked todo can still
+and do not snapshot-the-cache / write-a-prediction / restore-on-error. A cache
+library is not the productionizing step — the sync mutation already was the
+prediction. (Router `query` or `@tanstack/solid-query` remain valid when the
+project already uses them; they are not required to "make it real".)
+Optimistic rows stay interactive — a not-yet-acked todo can still
 be toggled. Do not disable the control until confirmation, and do not mutex
 rapid clicks; `action` is the transaction (no half-mutation, no interleaved
 list). An in-flight action does not freeze unrelated writes. Collecting failed
@@ -473,13 +475,14 @@ handler or the `action`.
 `createOptimistic` / `createOptimisticStore` are for a tentative value during an
 active mutation, not a local editing session (use a writable derivation or a plain
 store for that). A whole-form `createOptimistic(false)` saving flag is fine; prefer
-`pending` on the record when the affordance is per item. The overlay is still the
-source of truth after you wrap the same store in server functions — do not add
-snapshot/restore or a cache library "to make it production."
+`pending` on the record when the affordance is per item. The overlay is
+discarded when the action settles — the confirmed store is the truth. Wrapping
+the same store in server functions does not change that; do not add
+snapshot/restore.
 
 **`yield`, not a bare `await`, is the transaction boundary.** `await api.save()` then
-`setTodos(...)` *runs*, but the write commits immediately and optimistic rollback is lost.
-Either `yield saveTodo(todo)` or, when you need a typed result, `const saved = await api.save(); yield; setTodos(...)`.
+`setTodos(...)` *runs*, but the write commits immediately — it is not held as an
+overlay. Either `yield saveTodo(todo)` or, when you need a typed result, `const saved = await api.save(); yield; setTodos(...)`.
 
 Navigation-shaped updates do **not** need core `action`. A plain setter is enough:
 reads pull the async, and downstream async computeds hold previous values until the
@@ -825,11 +828,12 @@ export async function findUser(id: string) {
 
 A function-level server function cannot close over component locals — pass
 values as arguments. Treat every argument as untrusted — TypeScript does not
-cross the HTTP boundary, so do not invent tRPC / a schema layer / type-gen;
-validate inside the function. These functions *are* the RPC — do not add an
+cross the HTTP boundary, so do not invent tRPC / RPC type-gen;
+validate inside the function (a parse in the function body is that
+validation, not an RPC schema across the wire). These functions *are* the RPC — do not add an
 API-route file (or a Next `route.ts`) just to wrap `db.todos.insert`. API
 routes are for real HTTP endpoints (webhooks, third-party POST), not for the
-app talking to its own database. Read trusted identity
+app's own RPC. Read trusted identity
 from `getRequestEvent()`, never from a caller-supplied user id. During SSR the same
 reference runs in-process (no HTTP); in the browser it is HTTP. Anything
 referenced only inside the `"use server"` body (db client, secrets) never
@@ -863,8 +867,9 @@ export const fetchStory = GET(async (id: number) => {
 ```
 
 `live()` yields **current state** (each yield replaces the last); do not treat
-it as an append-only event log. The first yield is the `<Loading>` boundary
-(same as a Promise); later yields are updates — the fallback does not return.
+it as an append-only event log. Until the first yield it is unsettled
+(`<Loading>`), same as a Promise; later yields are updates — the fallback does
+not return.
 Wire status is a side channel, not a field in the value:
 
 ```ts
@@ -873,7 +878,7 @@ source.onstatus = (next) => setStatus(next); // "connected" | "reconnecting" | "
 
 Do not yield `{ price, connected: true }`. After the first successful connection,
 transient failures retry with exponential backoff; a 4xx is a definite rejection.
-There is no subscription API and no store wiring to configure: one `createMemo(() => stockPrice(symbol()))` consumes, and every reader of that memo shares the latest value. Do not write subscribe/unsubscribe around `live()` — the memo owns the connection. Hoist the memo (or a router-level live query around that transport) so multiple readers share one stream.
+There is no subscription API and no store wiring to configure: one `createMemo(() => stockPrice(symbol()))` consumes, and every reader of that memo shares the latest value. Do not subscribe/unsubscribe in the component around `live()` — the memo owns the client connection. The `live()` generator may still subscribe to an upstream source. Hoist the memo so multiple readers share one stream.
 
 **The graph continues across the wire.** An in-flight Promise serializes as a
 Promise and resolves in the client graph as it settles — including before the
@@ -883,11 +888,13 @@ client", and do not delay `renderToStream` to preserve visual order — `<Reveal
 controls when content *appears*, while HTML still ships as soon as it is ready.
 With the router's single-flight integration, a mutation response can seed the
 destination route's preloads; that is the refresh, not a follow-up `fetch`.
-Start-mode production is `handleRequest(request)` (or the default Fetchable
-`fetch`). Cloudflare / Netlify / Nitro Vite plugins adopt that handler — do not
-write a Solid adapter, a custom Worker, or a Netlify Function. For Node, use the
-official template `server.js` (web `Request` in, stream the response); do not
-invent an Express/Solid bridge. Request middleware is `start.middleware`
+When the app has a server bundle (`ssr` or server functions), production is
+`handleRequest(request)` (or the default Fetchable `fetch`). Cloudflare /
+Netlify / Nitro Vite plugins adopt that handler — do not write a Solid adapter,
+a custom Worker, or a Netlify Function. For Node, use the official template
+`server.js` (web `Request` in, stream the response); do not invent an
+Express/Solid bridge. Client-only `start: true` is still static `dist/client`
+— there is no handler to wrap. Request middleware is `start.middleware`
 (web `Request` + `next`), not Express `app.use`. Server functions that return components
 (`serverFunctions: { components: true }`) are experimental preview — do not use
 them unless the project already has that flag on.
@@ -1022,14 +1029,14 @@ how to reuse. Prefer the form on the right.
 | `createRenderEffect` / `createTrackedEffect` as the default effect | two-phase `createEffect(compute, apply)` |
 | `createEffect(() => source(), () => setError(null))` to reset a signal | `createSignal(() => { source(); return null; })` — the writable derivation resets on change; a sole-setter apply is rule 4 |
 | a "server-safe" initial value adopted after mount (React hydration-mismatch fix) | client mode mounts with `render()` into an empty body — no hydration, no mismatch; read `localStorage` / `matchMedia` directly at signal creation |
-| rewrite `App.tsx` with loading/error branches, snapshot/restore, or a cache library when the list moves to the server | same `setTodos`; wrap mutations in `action`; swap `createOptimisticStore` + a server-functions file. The overlay stays the source of truth |
+| rewrite `App.tsx` with loading/error branches, or snapshot/restore, when the list moves to the server | same `setTodos`; wrap mutations in `action`; swap `createOptimisticStore` + a server-functions file. The overlay is discarded; the confirmed store is the truth |
 | disable an optimistic row until ack, or mutex rapid clicks / freeze unrelated writes | keep the control enabled; `action` is the transaction. An in-flight action does not freeze other writes. Failed-action replay is optional |
-| tRPC / type-gen / a schema layer around `"use server"` | TypeScript does not cross HTTP — validate inside the function. Locals only the body reads (db, secrets) stay off the client |
+| tRPC / RPC type-gen around `"use server"` | TypeScript does not cross HTTP — validate inside the function. Locals only the body reads (db, secrets) stay off the client |
 | `src/routes/api/todos.ts` (or a Next `route.ts`) wrapping `db.todos.insert` | `"use server"` *is* the RPC. API routes are for real HTTP endpoints (webhooks), not the app's own mutations |
 | router/server mutation, then `fetch` / `onSettled` / `hydrate` to refresh the page | `reload` / `revalidate` / single-flight (the mutation response can seed destination preloads). In-flight Promises serialize as Promises; `live()` continues from HTML |
 | delay `renderToStream` so HTML arrives in visual order | stream as soon as ready; `<Reveal collapsed>` controls when content *appears* |
-| subscribe/unsubscribe (or a store wiring) around `live()` | `createMemo(() => stockPrice(symbol()))` — the memo owns the connection. First yield is `<Loading>`; later yields are updates |
-| a Solid adapter / custom Worker / Express bridge, or `entry-client.tsx` under `start: true` | `handleRequest(request)` / Fetchable `fetch`; platform plugins adopt it. Node: template `server.js`. Start mode: write `src/App.tsx`. Middleware is `start.middleware`, not Express `app.use` |
+| subscribe/unsubscribe in the component around `live()` | `createMemo(() => stockPrice(symbol()))` — the memo owns the client connection. Until the first yield, `<Loading>`; later yields are updates |
+| a Solid adapter / custom Worker / Express bridge, or `entry-client.tsx` under `start: true` | With a server bundle: `handleRequest(request)` / Fetchable `fetch`; platform plugins adopt it. Node: template `server.js`. Client-only start: static `dist/client`. Middleware is `start.middleware`, not Express `app.use` |
 | `createMemo(async () => (await props.story).author)` | `createMemo(() => props.story.author)` — a derivation over an async value becomes async; no await, no Promise type |
 | return a component from `"use server"` / flip `serverFunctions.components` | experimental preview — do not enable unless the project already has that flag |
 
@@ -1179,9 +1186,10 @@ always-applied rules installed alongside this skill.
       setters + `action` + server functions): do not rewrite App with
       loading/error branches, disable optimistic rows until ack, or refetch in
       `hydrate` / `onSettled`. HTTP does not enforce TypeScript — validate
-      inside `"use server"`; do not invent tRPC. `live()` owns the connection.
-      Start-mode production is `handleRequest` / Fetchable `fetch`, not a custom
-      adapter. Do not delay `renderToStream` for visual order (`<Reveal>` does).
+      inside `"use server"`; do not invent tRPC. `live()` owns the client connection.
+      A server bundle uses `handleRequest` / Fetchable `fetch`; client-only start
+      is static `dist/client`. Do not delay `renderToStream` for visual order
+      (`<Reveal>` does).
 - [ ] External collections reconcile into stores (function-form `createStore` /
       `reconcile`), never wholesale draft assignment or `setTodos((t) => t.filter(...))`
       as the identity-preserving update.

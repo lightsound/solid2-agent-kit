@@ -260,7 +260,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `Response.json` — a raw `Response` is HTTP-handler control flow; scripted
     callers should receive the value. Cache GET reads with `Cache-Control` on that
     response, not a hand-rolled Solid cache. HTTP does not enforce TypeScript —
-    validate inside the function; do not invent tRPC / type-gen / a schema layer.
+    validate inside the function; do not invent tRPC / RPC type-gen.
     Locals only the `"use server"` body reads (db, secrets) stay off the client.
     Do not add an API-route file just to wrap a database call — `"use server"`
     is the RPC. During SSR the call is in-process (no HTTP). After a mutation, `reload` /
@@ -268,10 +268,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `hydrate` refetch to "refresh the page". In-flight Promises serialize as
     Promises; `live()` embeds the first value in HTML and continues the stream on
     the client. Do not delay `renderToStream` for visual order (`<Reveal>` owns
-    display). Do not write subscribe/unsubscribe around `live()`. Start-mode
-    production is `handleRequest(request)` / Fetchable `fetch`; platform Vite
-    plugins adopt that handler (Node: the template `server.js`). Request
-    middleware is `start.middleware`, not Express `app.use`. Do not return
+    display). Do not write subscribe/unsubscribe in the component around `live()`.
+    When the app has a server bundle (`ssr` or server functions), production is
+    `handleRequest(request)` / Fetchable `fetch`; platform Vite plugins adopt that
+    handler (Node: the template `server.js`). Client-only start mode is static
+    `dist/client` — there is no handler to wrap. Request middleware is
+    `start.middleware`, not Express `app.use`. Do not return
     components from `"use server"` unless the project already enabled the
     experimental `serverFunctions.components` flag. JSON-encodable server-function arguments
     only, unless `enableRichArguments()` was called once in the client entry

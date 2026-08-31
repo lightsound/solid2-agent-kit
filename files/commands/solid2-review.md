@@ -26,7 +26,7 @@ Steps:
    - treating `<Errored>` as a terminal ErrorBoundary, or routing per-row mutation
      failures through it (those belong in the action / a projection-folded map);
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;
-   - rewriting App with loading/error branches (or a cache library) when wrapping
+   - rewriting App with loading/error branches, or snapshot/restore, when wrapping
      a client store in server functions; disabling optimistic rows until ack;
    - tRPC / type-gen around `"use server"`, a client `fetch` after a mutation,
      refetch in `hydrate`/`onSettled`, a custom Worker/Express adapter, or
