@@ -127,8 +127,8 @@ Run both gates on every PR so nothing an agent (or human) merges can reintroduce
 Solid 1.x patterns:
 
 ```yaml
-- uses: actions/setup-node@v4
-  with: { node-version: 22 }
+- uses: actions/setup-node@v7
+  with: { node-version: 26 }
 - run: npm ci
 - run: npx solid2-agent-kit check && npx solid2-agent-kit doctor
 ```
