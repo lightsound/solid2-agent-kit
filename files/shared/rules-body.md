@@ -270,10 +270,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     the client. Do not delay `renderToStream` for visual order (`<Reveal>` owns
     display). Do not write subscribe/unsubscribe in the component around `live()`.
     When the app has a server bundle (`ssr` or server functions), production is
-    `handleRequest(request)` / Fetchable `fetch`; platform Vite plugins adopt that
-    handler (Node: the template `server.js`). Client-only start mode is static
-    `dist/client` — there is no handler to wrap. Request middleware is
-    `start.middleware`, not Express `app.use`. Do not return
+    `handleRequest(request)` from the built `dist/server/server.js` (or its
+    Fetchable `fetch`); platform Vite plugins adopt that handler (Node: the
+    template `server.js`). Client-only start mode is static `dist/client` —
+    there is no handler to wrap. Request middleware is
+    `start: { middleware: "./src/middleware.ts" }`, not Express `app.use`. Do not return
     components from `"use server"` unless the project already enabled the
     experimental `serverFunctions.components` flag. JSON-encodable server-function arguments
     only, unless `enableRichArguments()` was called once in the client entry

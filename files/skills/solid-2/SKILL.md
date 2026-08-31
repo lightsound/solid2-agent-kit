@@ -870,15 +870,23 @@ export const fetchStory = GET(async (id: number) => {
 it as an append-only event log. Until the first yield it is unsettled
 (`<Loading>`), same as a Promise; later yields are updates — the fallback does
 not return.
-Wire status is a side channel, not a field in the value:
+Wire status is a side channel on the **iterable the `live()` call returns**,
+not a field in the value and not a property of the memo:
 
 ```ts
+const source = stockPrice("ACME");
 source.onstatus = (next) => setStatus(next); // "connected" | "reconnecting" | "closed"
+const price = createMemo(() => source);
 ```
 
 Do not yield `{ price, connected: true }`. After the first successful connection,
 transient failures retry with exponential backoff; a 4xx is a definite rejection.
-There is no subscription API and no store wiring to configure: one `createMemo(() => stockPrice(symbol()))` consumes, and every reader of that memo shares the latest value. Do not subscribe/unsubscribe in the component around `live()` — the memo owns the client connection. The `live()` generator may still subscribe to an upstream source. Hoist the memo so multiple readers share one stream.
+There is no subscription API and no store wiring to configure. For a reactive
+argument, call `live()` inside the memo so the input is tracked:
+`createMemo(() => stockPrice(props.symbol))`. Every reader of that memo shares
+one connection — hoist it instead of calling `live()` at each site. Do not
+subscribe/unsubscribe in the component around `live()`. The `live()` generator
+may still subscribe to an upstream source.
 
 **The graph continues across the wire.** An in-flight Promise serializes as a
 Promise and resolves in the client graph as it settles — including before the
@@ -889,13 +897,15 @@ controls when content *appears*, while HTML still ships as soon as it is ready.
 With the router's single-flight integration, a mutation response can seed the
 destination route's preloads; that is the refresh, not a follow-up `fetch`.
 When the app has a server bundle (`ssr` or server functions), production is
-`handleRequest(request)` (or the default Fetchable `fetch`). Cloudflare /
+`handleRequest(request)` from the built `dist/server/server.js` (or that
+module's Fetchable default `fetch`) — not an import from `solid-js`. Cloudflare /
 Netlify / Nitro Vite plugins adopt that handler — do not write a Solid adapter,
 a custom Worker, or a Netlify Function. For Node, use the official template
 `server.js` (web `Request` in, stream the response); do not invent an
 Express/Solid bridge. Client-only `start: true` is still static `dist/client`
-— there is no handler to wrap. Request middleware is `start.middleware`
-(web `Request` + `next`), not Express `app.use`. Server functions that return components
+— there is no handler to wrap. Request middleware is the Vite option
+`start: { middleware: "./src/middleware.ts" }` (web `Request` + `next`), not
+Express `app.use`. Server functions that return components
 (`serverFunctions: { components: true }`) are experimental preview — do not use
 them unless the project already has that flag on.
 
@@ -1035,8 +1045,8 @@ how to reuse. Prefer the form on the right.
 | `src/routes/api/todos.ts` (or a Next `route.ts`) wrapping `db.todos.insert` | `"use server"` *is* the RPC. API routes are for real HTTP endpoints (webhooks), not the app's own mutations |
 | router/server mutation, then `fetch` / `onSettled` / `hydrate` to refresh the page | `reload` / `revalidate` / single-flight (the mutation response can seed destination preloads). In-flight Promises serialize as Promises; `live()` continues from HTML |
 | delay `renderToStream` so HTML arrives in visual order | stream as soon as ready; `<Reveal collapsed>` controls when content *appears* |
-| subscribe/unsubscribe in the component around `live()` | `createMemo(() => stockPrice(symbol()))` — the memo owns the client connection. Until the first yield, `<Loading>`; later yields are updates |
-| a Solid adapter / custom Worker / Express bridge, or `entry-client.tsx` under `start: true` | With a server bundle: `handleRequest(request)` / Fetchable `fetch`; platform plugins adopt it. Node: template `server.js`. Client-only start: static `dist/client`. Middleware is `start.middleware`, not Express `app.use` |
+| subscribe/unsubscribe in the component around `live()` | `createMemo(() => stockPrice(props.symbol))` — hoist that memo to share one connection. `onstatus` is on the iterable the `live()` call returns, not on the memo. Until the first yield, `<Loading>`; later yields are updates |
+| a Solid adapter / custom Worker / Express bridge, or `entry-client.tsx` under `start: true` | With a server bundle: `handleRequest` from `dist/server/server.js` / Fetchable `fetch`; platform plugins adopt it. Node: template `server.js`. Client-only start: static `dist/client`. Middleware is `start: { middleware: "..." }`, not Express `app.use` |
 | `createMemo(async () => (await props.story).author)` | `createMemo(() => props.story.author)` — a derivation over an async value becomes async; no await, no Promise type |
 | return a component from `"use server"` / flip `serverFunctions.components` | experimental preview — do not enable unless the project already has that flag |
 
@@ -1187,7 +1197,7 @@ always-applied rules installed alongside this skill.
       loading/error branches, disable optimistic rows until ack, or refetch in
       `hydrate` / `onSettled`. HTTP does not enforce TypeScript — validate
       inside `"use server"`; do not invent tRPC. `live()` owns the client connection.
-      A server bundle uses `handleRequest` / Fetchable `fetch`; client-only start
+      A server bundle uses `handleRequest` from `dist/server/server.js`; client-only start
       is static `dist/client`. Do not delay `renderToStream` for visual order
       (`<Reveal>` does).
 - [ ] External collections reconcile into stores (function-form `createStore` /
