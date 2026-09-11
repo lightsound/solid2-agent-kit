@@ -224,7 +224,9 @@ createEffect(
 Reads inside `apply` do not track. Extract every needed reactive value in `compute`
 (e.g. `() => ({ name: user.name, role: user.role })`). Passing a store proxy into `apply`
 and reading `user.name` there *runs once* and never retriggers. Compute-phase errors can be
-intercepted with the bundle form `createEffect(compute, { effect, error })`.
+intercepted with the bundle form `createEffect(compute, { effect, error })`. Skip the
+initial run with `{ defer: true }` — the `on(deps, fn, { defer: true })` replacement;
+the effect first runs on the next change.
 
 A two-phase effect whose apply only calls a local signal setter is "state + effect" in
 disguise — formally legal Solid 2, still rule 4 (`solid2-kit check` flags it). The reset
@@ -1049,7 +1051,8 @@ router mutation, `revalidate(...)` — not core `refresh()`, and not
 refresh cached data: `return reload({ revalidate: "todos" })`). `live()` sources
 update through the open stream; do not `revalidate` them. Replace SolidStart /
 Router 0.x leftovers: no `createAsync`, `useSubmission` (singular), `cache()`,
-router `json()`, or `<FileRoutes />` (`fileRoutes(pageRoutes)` instead).
+router `json()`, or `<FileRoutes />` (`fileRoutes(pageRoutes)` from `@solidjs/router/fs`
+over `pageRoutes` from `virtual:file-routes` instead).
 
 ### Server functions — `"use server"`
 

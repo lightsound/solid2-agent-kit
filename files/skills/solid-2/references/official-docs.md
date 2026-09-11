@@ -170,8 +170,10 @@ verify API names against the reference pages above.
 
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/router-factory.md
+- https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/routes-and-paths.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/navigation.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/data.md
+- https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/types.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/history.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-router/filesystem.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-meta/title.md

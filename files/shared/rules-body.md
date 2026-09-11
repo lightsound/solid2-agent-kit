@@ -74,7 +74,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `compute`; its return value feeds `apply`, which does imperative work and may return a
     cleanup. Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
     `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest
-    primitives. Most React `useEffect` code should not become an effect at all — see the skill.
+    primitives. Skip the initial run with `{ defer: true }`. Most React `useEffect` code should not become an effect at all — see the skill.
 9. **Stores update by mutating a draft**: `setStore(draft => { draft.user.name = "Ada" })`.
    Never rebuild with spreads — that destroys property-level subscriptions. The return
    form is for shapes where mutation is awkward — most commonly removal
@@ -371,7 +371,7 @@ directory (default `src/`).
 | `renderToStringAsync(...)` | `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`) |
 | `clearDelegatedEvents` | delete — delegated listeners are scoped to each render root |
 | `vite-plugin-solid` / `jsxImportSource: "solid-js"` | `@solidjs/vite-plugin` / `"jsxImportSource": "@solidjs/web"` |
-| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` / `<FileRoutes>` | `createRouter({ routes })`, `fileRoutes(pageRoutes)`, plain `<a href={Router.paths...}>`, `hashHistory()`; link state via automatic `aria-current` / `data-active` / `data-pending` + CSS (`useLinkState` in JSX) |
+| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` / `<FileRoutes>` | `createRouter({ routes })`, `fileRoutes(pageRoutes)` (`fileRoutes` from `@solidjs/router/fs`, `pageRoutes` from `virtual:file-routes`), plain `<a href={Router.paths...}>`, `hashHistory()`; link state via automatic `aria-current` / `data-active` / `data-pending` + CSS (`useLinkState` in JSX) |
 | `createAsync` / `createAsyncStore` / `useSubmission` / router `json()` / `cache()` | `createMemo(() => getUser(id()))`, `useSubmissions`, `respond()` from `@solidjs/web`, `query` |
 | `import ... from "@solidjs/start"` / `vinxi` / `h3` / `"use client"` | `GET` from `@solidjs/web/server-functions`; Solid has no `"use client"` |
 | `render(<App />, root)` | `render(() => <App />, root)` (same for `hydrate` / `renderToString` / `renderToStream`) |
