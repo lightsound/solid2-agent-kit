@@ -43,6 +43,8 @@ const REQUIRED_APIS = [
   'affects',
   'refresh',
   'resolve',
+  'until',
+  'TimeoutError',
   // stores
   'reconcile',
   'merge',
@@ -66,6 +68,9 @@ const REQUIRED_APIS = [
   'useNavigate',
   'useLocation',
   'useParams',
+  'useSearchParams',
+  'useLinkState',
+  'useIsRouting',
   'redirect',
   'reload',
   'handleRequest',
@@ -80,6 +85,9 @@ const REQUIRED_APIS = [
   'useSubmissions',
   'fileRoutes',
   'HydrationScript',
+  // diagnostics (dev builds only)
+  'DEV',
+  'captureArtifact',
 ];
 
 // Solid 1.x names that appear in kit content only as banned examples.
@@ -96,7 +104,7 @@ const BANNED_CREATE = new Set([
 
 // User-defined custom primitives that appear in kit examples (idiomatically
 // named create*) but are not Solid APIs.
-const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo', 'createTodos']);
+const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo', 'createTodos', 'createMessages']);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

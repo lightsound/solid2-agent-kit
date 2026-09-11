@@ -63,6 +63,7 @@ const expected = [
   'dynamic-jsx',
   'jsx-namespace-import',
   'effect-sync-signal',
+  'action-plain-async',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {

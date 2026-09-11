@@ -354,6 +354,18 @@ function effectSyncFindings(content) {
   return matches;
 }
 
+// Core `action` (solid-js) takes a generator (`function*` / `async function*`)
+// so `yield` can re-enter the transaction; router `action` (@solidjs/router)
+// legitimately takes `async (form) => ...`. Only flag `action(async` when this
+// file's `action` comes from "solid-js" — a router import (or none) stays silent.
+function actionAsyncFindings(content) {
+  if (!/import\s*\{[^}]*\baction\b[^}]*\}\s*from\s*['"]solid-js['"]/.test(content)) return [];
+  if (/import\s*\{[^}]*\baction\b[^}]*\}\s*from\s*['"]@solidjs\/router['"]/.test(content)) return [];
+  return [...content.matchAll(/\baction\s*\(\s*async(?!\s+function\s*\*)/g)].map((match) => ({
+    index: match.index,
+  }));
+}
+
 const CHECKS = [
   {
     id: 'props-destructure-param',
@@ -511,7 +523,7 @@ const CHECKS = [
     id: 'solid1-router',
     pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
     message:
-      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}>.',
+      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active/data-pending + CSS, or useLinkState).',
   },
   {
     id: 'meta-provider',
@@ -592,6 +604,14 @@ const CHECKS = [
     pattern: /<Dynamic[\s/>]/g,
     message:
       '`<Dynamic>` is a JSX convenience wrapper. Application code should use dynamic(() => ...) from "@solidjs/web" so the component identity stays stable.',
+  },
+  {
+    // `action(async (item) => ...)` with core `action` never re-enters the
+    // transaction — `action(async function* ...)` does not match.
+    id: 'action-plain-async',
+    find: actionAsyncFindings,
+    message:
+      'Core `action` takes a generator (`function*` / `async function*`), not a plain async function — only `yield` re-enters the transaction, so writes after a bare `await` commit immediately. (Router `action` from "@solidjs/router" is the one that takes `async (form) => ...`.)',
   },
 ];
 
