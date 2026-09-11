@@ -523,7 +523,7 @@ const CHECKS = [
     id: 'solid1-router',
     pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
     message:
-      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}>.',
+      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active/data-pending + CSS, or useLinkState).',
   },
   {
     id: 'meta-provider',

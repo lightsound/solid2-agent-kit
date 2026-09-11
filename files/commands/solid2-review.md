@@ -37,6 +37,14 @@ Steps:
    - store updates that rebuild objects/arrays instead of mutating the draft or reconciling
      (`filter` for removal is fine — survivors keep identity; only fresh-tree wholesale
      replacement needs `reconcile` / the derived form);
+   - hand-rolled link-active comparisons (`location.pathname === ...`) instead of the
+     automatic `aria-current` / `data-active` / `data-pending` attributes (+ CSS) or
+     `useLinkState` / `useIsRouting`; hand-rolled query parsing instead of
+     `useSearchParams`;
+   - search inputs bound to a held value without `latest`, effect-based debounce, fully
+     controlled forms without `name`s, `{ success: false }` result objects instead of
+     thrown failures, or router forms without server-side validation (`throw respond(...)`)
+     and `useSubmissions` inline errors;
    - browser-only *values* handled with a `clientOnly` component split or an `isServer`
      branch instead of `ssrSource: "client"` / `"hybrid"` on the memo/signal/derived store;
    - held writes with no feedback (`isPending` / `latest` / optimistic value / `affects()`)

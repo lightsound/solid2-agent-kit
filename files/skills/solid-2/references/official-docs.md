@@ -113,6 +113,7 @@ verify API names against the reference pages above.
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/affects.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/on-settled.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/refresh.md
+- https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/lifecycle-actions/until.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/advanced/specialized-reactivity/on-cleanup.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/advanced/store-advanced/snapshot.md
 

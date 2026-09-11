@@ -55,6 +55,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `event.currentTarget` (the element that owns the handler), not `event.target`
     (a nested child). Never pass a setter as the handler (`onClick={setCount}`) —
     that writes the event object; wrap it: `onClick={() => setCount((c) => c + 1)}`.
+    Debounce at the handler (`onInput={debounce(...)}`), never as an effect copying
+    one signal into another.
 7. **Lists use `<For>`**, never `{list().map(...)}` in reactive JSX and never `key` props.
     `{todos().map((t) => <Row todo={t} />)}` *renders*, then recreates every row on each
     update. Row identity: default = item reference; `keyed={(item) => item.id}` = key function
@@ -105,7 +107,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     Default navigation holds: keep `selectedId()` so highlight and content stay
     consistent; `latest(selectedId)` only when the highlight should move first.
     Pair `class={{ pending: isPending(selectedId) }}` with a short CSS
-    `transition-delay` so fast swaps do not flash.
+    `transition-delay` so fast swaps do not flash. Inputs feeding a request bind
+    `value={latest(query)}` so keystrokes show while the write is held.
     `isPending` is a per-expression question, not a global spinner: ask it of the
     async source, a derived prop (`isPending(() => props.story)`), or the write
     (`isPending(selectedId)`), even when the fetch lives in a child. It is
@@ -176,6 +179,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     Making a client store "real" is additive: same setters, wrap mutations in
     `action`, swap `createOptimisticStore` and a file of server functions — do
     not rewrite `App.tsx` with loading/error branches.
+    No request counters or `AbortController`s for dedup/cancellation — superseded
+    answers drop automatically. Throw unusable responses; never `{ success: false }`
+    result objects checked at every read.
     Mechanically enforced by `solid2-kit check` (loading-signal naming, zero-arg-call undefined checks).
 19. **Refetch is `refresh(source)`** — rarely needed, but when it is, never fake it with a
     counter/version signal read inside the computation. Input-driven refetch is automatic
@@ -210,7 +216,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `pending` on the record rather than a second copy of state. Do not snapshot
     and restore, disable optimistic rows until ack, mutex rapid clicks, or freeze
     unrelated writes because one action is in flight; failed-action replay is
-    optional. Except reactive clients (e.g. Convex) whose subscriptions already push authoritative
+    optional. Fire-and-forget confirmations wait with `yield until(predicate,
+    { timeout })` — the predicate reads authoritative state. Except reactive clients (e.g. Convex) whose subscriptions already push authoritative
     state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`) — run `solid2-kit doctor`
     after touching `package.json` / tsconfig / root configs; it fails on React and Solid 1.x
@@ -260,14 +267,20 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     at module scope — not JSX `<Route>` / `<A>` / `<HashRouter>`. That package's `action` /
     `query` are URL-addressable POST forms and a read cache — not core `action` /
     `refresh` from `solid-js`. Router mutations: `<form action={save} method="post">`
-    (POST only; `.with(id)` binds args into the URL). `useAction` is JS-only. Cache
+    (POST only; `.with(id)` binds args into the URL). Validate on the server
+    (`throw respond({ issues }, { status: 400 })`); inline errors from `useSubmissions`,
+    pending via `form[aria-busy]` CSS. Keep server functions in `src/data/`, not under
+    `src/routes` (a `.ts` file there is an API route). `useAction` is JS-only. Cache
     reads: `query(fn, "name")` then `createMemo(() => getUser(id()))`; after a mutation
     `revalidate(getUser.key)`. Do not wrap mutations in `query` (an undeclared server
     function becomes GET). `Router.paths` is not the current location (`useLocation` /
-    `useParams`); a route `preload` result is `props.data`. One router instance —
+    `useParams`); search params via `useSearchParams` (merging setter; typed with a route
+    `search` schema + path node). A route `preload` result is `props.data`. One router instance —
     Solid Router does not support nested `<Router>` / nested `createRouter`.
     In-app navigation is `useNavigate` or `<a href={Router.paths...}>`, not
-    `window.location` / `history.pushState`. Trusted identity is
+    `window.location` / `history.pushState`. Link state is automatic
+    (`aria-current` / `data-active` / `data-pending` + CSS; `useLinkState` /
+    `useIsRouting` in JSX) — never hand-rolled `location.pathname` comparisons. Trusted identity is
     `getRequestEvent()`, never a caller-supplied user id. Unscripted forms use
     the function `.url` (or a router `action`), not a hand-built `/_server/`
     path. Client history adapters do not select the SSR URL — pass
@@ -279,7 +292,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     Return `respond(value, { status, headers })` from a `"use server"` function, not
     `Response.json` — a raw `Response` is HTTP-handler control flow; scripted
     callers should receive the value. Reads are function calls too (`await getUser(id)`
-    on a `GET()`-declared read; the method mirrors the operation). Cache GET reads with
+    on a `GET()`-declared read; the method mirrors the operation). Return or throw a
+    redirect (`if (!session?.userId) throw redirect("/sign-in")`); `redirect()` /
+    `respond()` take `revalidate` like `reload()`. Cache GET reads with
     `Cache-Control` on that response (the default is `no-store`), not a hand-rolled
     Solid cache. HTTP does not enforce TypeScript —
     validate inside the function; do not invent tRPC / RPC type-gen.
@@ -356,7 +371,7 @@ directory (default `src/`).
 | `renderToStringAsync(...)` | `await renderToStream(() => <App />)` (one consumer: `pipe` / `pipeTo` / `readable`) |
 | `clearDelegatedEvents` | delete — delegated listeners are scoped to each render root |
 | `vite-plugin-solid` / `jsxImportSource: "solid-js"` | `@solidjs/vite-plugin` / `"jsxImportSource": "@solidjs/web"` |
-| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` / `<FileRoutes>` | `createRouter({ routes })`, `fileRoutes(pageRoutes)`, plain `<a href={Router.paths...}>`, `hashHistory()` |
+| JSX `<Route>` / `<A>` / `<HashRouter>` / `<Navigate>` / `<FileRoutes>` | `createRouter({ routes })`, `fileRoutes(pageRoutes)`, plain `<a href={Router.paths...}>`, `hashHistory()`; link state via automatic `aria-current` / `data-active` / `data-pending` + CSS (`useLinkState` in JSX) |
 | `createAsync` / `createAsyncStore` / `useSubmission` / router `json()` / `cache()` | `createMemo(() => getUser(id()))`, `useSubmissions`, `respond()` from `@solidjs/web`, `query` |
 | `import ... from "@solidjs/start"` / `vinxi` / `h3` / `"use client"` | `GET` from `@solidjs/web/server-functions`; Solid has no `"use client"` |
 | `render(<App />, root)` | `render(() => <App />, root)` (same for `hydrate` / `renderToString` / `renderToStream`) |
