@@ -21,7 +21,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    functions (`() => props.x`, `omit(props, ...)`, `children(() => props.children)`) are fine.
    Mechanically enforced by `solid2-kit check` — run it after editing TSX.
 2. **Never read reactive values at component-body top level.** The body runs once, untracked;
-   `const v = count()` there is a frozen snapshot (Solid warns in dev). Carry the accessor
+   `const v = count()` there is a frozen snapshot (Solid reports `[STRICT_READ_UNTRACKED]`
+   in dev, naming the component). Carry the accessor
    (the function itself) into JSX and call it there.
 3. Signals are read by **calling** them: `{count()}` in JSX, not `{count}`.
 4. **Derived state is a function, not state + effect.** `const full = () => a() + b()`.
@@ -30,6 +31,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    `createSignal(() => { source(); return initial; })` (re-runs when `source()` changes;
    the setter still works) — never a `createEffect` whose apply calls the setter. The
    derivation also moves the `source()` read to the read site, under its boundaries.
+   (React needs `useState(props.x)` plus a `previousX` comparison reset for the same
+   derive-override-reset behavior.)
    Mechanically enforced by `solid2-kit check` (effects whose apply only writes a local
    signal). Use `createMemo` only for expensive
    computations, multiple consumers, or an equality boundary. When several writes can land
@@ -58,7 +61,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     (child receives item as an accessor); `keyed={false}` = positional. **Rows from
     server/refetched data (fresh object references on every update — fetch results,
     subscription payloads) must use a key function on a stable id**, or every update
-    recreates every row. Reference keying is for local arrays whose item identities are
+    recreates every row (dev + attribution flags the rebuilds as `[UNSTABLE_LIST_IDENTITY]`). Reference keying is for local arrays whose item identities are
     stable (e.g. store rows). Match the child signature to the mode: default item is the
     **raw** value (`todo.title`); `keyed={(t) => t.id}` / `keyed={false}` pass an
     **accessor** (`todo().title`). Mixing those still “runs” (you render a function, or
@@ -71,9 +74,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest
     primitives. Most React `useEffect` code should not become an effect at all — see the skill.
 9. **Stores update by mutating a draft**: `setStore(draft => { draft.user.name = "Ada" })`.
-   Never rebuild with spreads — that destroys property-level subscriptions. Returning a new
-   array from the setter (`setTodos((t) => t.filter(...))`) *renders* but is unkeyed — same
-   identity loss as wholesale assignment; mutate the draft or `reconcile`. Stores are
+   Never rebuild with spreads — that destroys property-level subscriptions. The return
+   form is for shapes where mutation is awkward — most commonly removal
+   (`setTodos((t) => t.filter(...))` is fine; survivors keep identity). Replacing an
+   array with a fresh tree replaces rows by index — that is the identity loss; use
+   `reconcile` or the derived form (dev + attribution flags the store-level waste as
+   `[IMMUTABLE_UPDATE_IN_STORE]`). Stores are
    **property reads** (`todos.length`, `todo.title`), not accessors — never `todos()`.
 10. **Async data is an async computation**: `createMemo(async () => ...)` (or
     `createMemo(() => fetchUser(id()))`) read under `<Loading>` / `<Errored>`.
@@ -106,6 +112,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     the *refetch* indicator after a settled answer exists — do not use it as the
     first-load spinner (`<Loading>` owns that). Pass the accessor: `isPending(user)`,
     not `isPending(user())` (that evaluates the read before `isPending` runs).
+    Granularity is the expression (`isPending(() => item.quantity)` with
+    `affects(item, "quantity")`). A hold with no feedback at all is `[SILENT_HOLD]`
+    under attribution — always pair a held write with one of these questions, an
+    optimistic value, or `affects()`.
     "Prop with local edits" = writable derivation:
     `createSignal(() => props.value)` or `createStore(() => props.value, fallback)`.
     `createOptimistic` is for an in-flight mutation, not a local editing session.
@@ -172,6 +182,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     (tracked inputs re-run the computation) and subscriptions push. Legit uses: after a
     mutation inside an `action`, and explicit reload buttons. Pair with `affects(source)`
     when the reload should present as pending — a bare `refresh()` re-asks quietly.
+    On a derived store, `refresh(store)` re-runs the derivation (`fn`); refreshing a
+    plain signal accessor is a no-op. `refresh` returns a promise for the target's next
+    settled state (`await refresh(user)`, or `yield refresh(x)` inside an action).
     These are three different APIs: core `refresh(source)` reruns a reactive source;
     router `revalidate(getUser.key)` invalidates the query cache; server-function
     `return reload({ revalidate: "todos" })` asks the integration to refresh cached
@@ -191,7 +204,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `postMessage` / logs via `snapshot(store)` (proxies fail or leak reactivity); render
     modals/tooltips/overlays through `<Portal>` from `@solidjs/web`; mutations whose writes
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
-    the sync mutation *is* the prediction (an overlay, discarded on settle); put
+    the sync mutation *is* the prediction (an overlay, discarded on settle); write the
+    body as a generator (`function*` / `async function*`) suspending on `yield`, never a
+    plain `async` function (`solid2-kit check` flags that); put
     `pending` on the record rather than a second copy of state. Do not snapshot
     and restore, disable optimistic rows until ack, mutex rapid clicks, or freeze
     unrelated writes because one action is in flight; failed-action replay is
@@ -205,6 +220,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `clientOnly` starts loading at declaration; `{ lazy: true }` defers until first
     render. `NoHydration` / `Hydration` split hydration *ownership*; they do not choose
     visible content — `clientOnly` is for components that must never run on the server.
+    A single browser-only *value* takes `ssrSource` on the memo/signal/derived store
+    (`"client"` skips the server value and computes after hydration, e.g. `localStorage`;
+    `"hybrid"` re-runs after adopting the serialized value, e.g. window size mixed with
+    server data) — do not split a component via `clientOnly` for one value. An
+    `onSettled` fill-in remains a valid alternative.
     Pass a **function** to `render` / `hydrate` / `renderToString` / `renderToStream`
     (`render(() => <App />, root)`), never `render(<App />, root)`. `hydrate` when the
     container already holds SSR HTML; `render` for an empty mount. Client mode (the
@@ -258,8 +278,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     (`<meta name="description">`) that Solid Meta should manage.
     Return `respond(value, { status, headers })` from a `"use server"` function, not
     `Response.json` — a raw `Response` is HTTP-handler control flow; scripted
-    callers should receive the value. Cache GET reads with `Cache-Control` on that
-    response, not a hand-rolled Solid cache. HTTP does not enforce TypeScript —
+    callers should receive the value. Reads are function calls too (`await getUser(id)`
+    on a `GET()`-declared read; the method mirrors the operation). Cache GET reads with
+    `Cache-Control` on that response (the default is `no-store`), not a hand-rolled
+    Solid cache. HTTP does not enforce TypeScript —
     validate inside the function; do not invent tRPC / RPC type-gen.
     Locals only the `"use server"` body reads (db, secrets) stay off the client.
     Do not add an API-route file just to wrap a database call — `"use server"`
