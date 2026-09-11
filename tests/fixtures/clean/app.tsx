@@ -10,12 +10,17 @@ import {
   type ParentProps,
 } from 'solid-js';
 import { clientOnly, dynamic, httpStatus, isServer } from '@solidjs/web';
-import { createRouter } from '@solidjs/router';
+import { action, createRouter } from '@solidjs/router';
 import { Title } from '@solidjs/meta';
 
 const Home = lazy(() => import('./Home'));
 const Chart = clientOnly(() => import('./Chart'));
 const Panel = dynamic(() => (isServer ? Home : Chart));
+
+// Router `action` legitimately takes an async function — the core-action gate
+// must stay silent here (it only flags files importing `action` from "solid-js").
+const saveNote = action(async (form: FormData) => String(form.get('note') ?? ''), 'save-note');
+void saveNote;
 
 export const Router = createRouter({
   routes: [{ path: '/', component: Home }],
