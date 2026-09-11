@@ -43,6 +43,8 @@ const REQUIRED_APIS = [
   'affects',
   'refresh',
   'resolve',
+  'until',
+  'TimeoutError',
   // stores
   'reconcile',
   'merge',
@@ -66,6 +68,9 @@ const REQUIRED_APIS = [
   'useNavigate',
   'useLocation',
   'useParams',
+  'useSearchParams',
+  'useLinkState',
+  'useIsRouting',
   'redirect',
   'reload',
   'handleRequest',
