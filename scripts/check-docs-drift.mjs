@@ -87,6 +87,8 @@ const REQUIRED_APIS = [
   'HydrationScript',
   // diagnostics (dev builds only)
   'DEV',
+  'OBSERVE',
+  'attribution',
   'captureArtifact',
 ];
 
