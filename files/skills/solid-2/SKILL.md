@@ -789,7 +789,7 @@ an agent sneaks in fails the suite instead of scrolling by.
 
 ### Dev diagnostics and attribution
 
-Diagnostics come in two tiers, both dev-build only (production strips them and `DEV`
+Diagnostics come in two layers, both dev-build only (production strips them and `DEV`
 is `undefined` there). Always-on findings include misplaced reads
 (`[STRICT_READ_UNTRACKED]`, `[PENDING_ASYNC_UNTRACKED_READ]`), misplaced writes
 (`[REACTIVE_WRITE_IN_OWNED_SCOPE]`, `[FLUSH_IN_ACTION]`, `[SERVER_WRITE]`), and
@@ -802,7 +802,7 @@ code maps to what the runtime observed and what to change.
 
 Cost and responsiveness findings need the opt-in attribution engine, which records
 every scope that re-ran, what changed to cause it, and how long it took. Since
-`solid-js` 2.0.0-rc.5 the engine lives behind its own subpath — `DEV.attribution`
+`solid-js` 2.0.0-rc.8 the engine lives behind its own subpath — `DEV.attribution`
 no longer exists (it is a type error; `DEV` holds only devtools hooks, graph
 traversal, and console reporting), and the low-level hook slot on `OBSERVE` is for
 engines and devtools, not app code:
@@ -876,6 +876,9 @@ curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"costs"}'
 curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"feedback"}'
 curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"end"}'
 ```
+
+`GET` the endpoint for status. With several open tabs the first responder wins,
+so keep one page under test.
 
 ## Client mode: no server HTML, no hydration reflexes
 
