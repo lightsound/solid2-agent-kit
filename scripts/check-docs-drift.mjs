@@ -77,9 +77,10 @@ const REQUIRED_APIS = [
   'REVALIDATE_ALL',
   'enableRichArguments',
   'markSafeError',
-  // error hooks
+  // error hooks / tracing
   'configureClientErrors',
   'configureServerErrors',
+  'getTraceContext',
   'GET',
   'live',
   'query',
