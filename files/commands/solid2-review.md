@@ -28,6 +28,11 @@ Steps:
      `isPending` treated as a global spinner instead of a per-expression question;
    - treating `<Errored>` as a terminal ErrorBoundary, or routing per-row mutation
      failures through it (those belong in the action / a projection-folded map);
+     error reporting done as a side effect inside `fallback` instead of
+     `configureClientErrors` / `configureServerErrors` / `render(..., { onError })`;
+   - store setter callbacks that `await` (the draft closes when the callback returns —
+     `[ASYNC_STORE_SETTER]`), store setters called at component-body top level, and
+     `latest()` used as a null-safe read of an unsettled source;
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;
    - rewriting App with loading/error branches, or snapshot/restore, when wrapping
      a client store in server functions; disabling optimistic rows until ack;

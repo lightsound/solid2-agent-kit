@@ -338,6 +338,24 @@ function soleLocalSetterApply(apply, localSetters) {
 
 const LOCAL_SETTER_DECL = /\[\s*[\w$]+\s*,\s*(set[A-Z][\w$]*)\s*\]\s*=\s*createSignal\b/g;
 
+// A store setter callback is a synchronous transaction — the draft closes when
+// the callback returns, so `setStore(async (draft) => …)` loses every write
+// after its first await (Solid 2.0.0-rc.9 throws ASYNC_STORE_SETTER in dev).
+// Signals may hold promises, so only setters declared via createStore /
+// createOptimisticStore destructuring in the same file are checked.
+const LOCAL_STORE_SETTER_DECL =
+  /\[\s*[\w$]+\s*,\s*(set[A-Z][\w$]*)\s*\]\s*=\s*create(?:Optimistic)?Store\b/g;
+
+function storeSetterAsyncFindings(content) {
+  const setters = new Set([...content.matchAll(LOCAL_STORE_SETTER_DECL)].map((m) => m[1]));
+  if (setters.size === 0) return [];
+  const findings = [];
+  for (const call of content.matchAll(/(?<![.\w$])(set[A-Z][\w$]*)\s*\(\s*async\b/g)) {
+    if (setters.has(call[1])) findings.push({ index: call.index });
+  }
+  return findings;
+}
+
 function effectSyncFindings(content) {
   const localSetters = new Set([...content.matchAll(LOCAL_SETTER_DECL)].map((m) => m[1]));
   if (localSetters.size === 0) return [];
@@ -603,7 +621,16 @@ const CHECKS = [
     id: 'dynamic-jsx',
     pattern: /<Dynamic[\s/>]/g,
     message:
-      '`<Dynamic>` is a JSX convenience wrapper. Application code should use dynamic(() => ...) from "@solidjs/web" so the component identity stays stable.',
+      '`<Dynamic>` is deprecated (Solid 2.0.0-rc.9). Hoist a component with dynamic(() => ...) from "@solidjs/web" so the factory is built once and the component identity stays stable.',
+  },
+  {
+    // `setStore(async (draft) => …)` on a setter declared via createStore /
+    // createOptimisticStore in this file — the draft closes before the await
+    // resumes. `setSignal(async …)` is not flagged (a signal may hold a promise).
+    id: 'store-setter-async',
+    find: storeSetterAsyncFindings,
+    message:
+      'Store setter callbacks are synchronous transactions — writes after the first `await` are lost (dev throws [ASYNC_STORE_SETTER]). Await outside, then call the setter with a synchronous draft mutation (inside an action, `yield` first).',
   },
   {
     // `action(async (item) => ...)` with core `action` never re-enters the

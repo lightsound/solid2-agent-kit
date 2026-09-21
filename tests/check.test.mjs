@@ -64,6 +64,7 @@ const expected = [
   'jsx-namespace-import',
   'effect-sync-signal',
   'action-plain-async',
+  'store-setter-async',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {
@@ -79,6 +80,13 @@ if (!output.includes('legacy.jsx')) {
 const effectSyncHits = [...output.matchAll(/effect-sync\.tsx:\d+ \[effect-sync-signal\]/g)].length;
 if (effectSyncHits !== 2) {
   fail(`expected 2 effect-sync-signal findings in effect-sync.tsx, saw ${effectSyncHits}`, violations);
+}
+
+// Both store families (createStore, createOptimisticStore); the clean fixture's
+// async signal setter and external set*(async …) call must stay silent.
+const storeAsyncHits = [...output.matchAll(/store-async\.tsx:\d+ \[store-setter-async\]/g)].length;
+if (storeAsyncHits !== 2) {
+  fail(`expected 2 store-setter-async findings in store-async.tsx, saw ${storeAsyncHits}`, violations);
 }
 
 // Explicit file mode: `check [files...]` gates only the named sources.

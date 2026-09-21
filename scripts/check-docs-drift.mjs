@@ -51,7 +51,6 @@ const REQUIRED_APIS = [
   'omit',
   'snapshot',
   'deep',
-  'storePath',
   // context / rendering
   'useContext',
   'useHead',
@@ -75,8 +74,12 @@ const REQUIRED_APIS = [
   'reload',
   'handleRequest',
   'respond',
+  'REVALIDATE_ALL',
   'enableRichArguments',
   'markSafeError',
+  // error hooks
+  'configureClientErrors',
+  'configureServerErrors',
   'GET',
   'live',
   'query',
@@ -89,6 +92,11 @@ const REQUIRED_APIS = [
   'DEV',
   'OBSERVE',
   'attribution',
+  'why',
+  'costs',
+  'feedback',
+  'subscriptions',
+  'formatRerun',
   'captureArtifact',
 ];
 
@@ -142,12 +150,15 @@ const createApis = extractCreateApis();
 const allApis = [...new Set([...createApis, ...REQUIRED_APIS])].sort();
 
 // Require a code-like occurrence, not a prose word: several APIs are common
-// English words (merge, action, deep, latest, resolve, render, flush) and a
-// plain \b word \b test would keep passing on prose even after the API was
-// removed from the docs. Accepted contexts: backticked (`name`), an import
-// or JSX position ({ name, <name), or a call (name().
+// English words (merge, action, deep, latest, resolve, render, flush, why,
+// costs, feedback, subscriptions) and a plain \b word \b test would keep
+// passing on prose even after the API was removed from the docs. Accepted
+// contexts: backticked (`name`), an import or JSX position ({ name, <name),
+// or a call (name(). A comma is not a context — prose lists (", why reads
+// have to", "costs, holds, feedback") match it, and no entry needs it: an
+// import-list member follows `{` or is backticked somewhere in the docs.
 function appearsAsCode(name) {
-  return new RegExp(`[\`{,<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
+  return new RegExp(`[\`{<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
 }
 
 const missing = allApis.filter((name) => !appearsAsCode(name));
