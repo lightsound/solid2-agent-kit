@@ -447,8 +447,9 @@ browser. `kind`/`handling` name the road: `render` / `fallback` (an `<Errored>`
 rendered), `render` / `client` (a `<Loading>` fragment rejected, client re-renders),
 `render` / `failed` (request fails; return ignored), `render` / `serialize` (a
 hydration value would not serialize), `server-function` / `thrown` (`direct: true` for
-an in-process call during SSR), `server-function` / `channel` (a rejection escaped
-through a returned stream after the head committed). A monitoring SDK's `init()` that
+an in-process call during SSR), `server-function` / `channel` (a rejection or throw
+escaping through the result graph — a promise, an iterable, or a stream — after the
+head committed). A monitoring SDK's `init()` that
 registers this hook must load before the server graph — put it in the plugin's
 `start: { instrument: "./src/instrument.ts" }`, not at the top of an entry (see
 [Production observability](#production-observability-the-observe-build)).
@@ -961,6 +962,7 @@ against what it uses.
 For regression tests, `@solidjs/diagnostics` turns the same channels into assertions:
 
 ```ts
+import '@solidjs/diagnostics/vitest'; // registers the matchers (or list it in vitest `setupFiles`)
 import { captureArtifact } from '@solidjs/diagnostics';
 
 const { artifact } = await captureArtifact(() => {
@@ -1001,11 +1003,11 @@ effects** — a pure markup or styling change does not need it.
    `attribution.{reruns, costs, holds, feedback}`, `records`):
 
    ```sh
-   curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"begin"}'
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"begin"}'
    # ... perform the interaction in the browser ...
-   curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"whyDidRun","params":{"name":"total"}}'
-   curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"costs"}'
-   curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"end"}'   # holds + feedback tables are in the result
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"whyDidRun","params":{"name":"total"}}'
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"costs"}'
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"end"}'   # holds + feedback tables are in the result
    ```
 
    `GET` the endpoint for status and the method list (`begin` / `end` / `active` /
@@ -1078,7 +1080,7 @@ the paths are `undefined` there.
   signals**, and should subscribe from a module that loads before the app.
 - **Interactions.** `attribution.enable()` then
   `attribution.subscribe("interaction", (event) => …)` says what each click waited on
-  (`event.settledMs`, `event.holds[].blockers`, `holdMs`); a hold nothing acknowledged
+  (`event.settledMs`, `event.holds[].blockers`, `event.holds[].holdMs`); a hold nothing acknowledged
   is the dead click. The fold tables stay separate imports.
 - **What leaves the process.** Beyond names, four record fields carry page data —
   `target` (element as `tag#id "text"`, 30 chars), `prev` / `value` previews (40 chars),
