@@ -150,12 +150,14 @@ const createApis = extractCreateApis();
 const allApis = [...new Set([...createApis, ...REQUIRED_APIS])].sort();
 
 // Require a code-like occurrence, not a prose word: several APIs are common
-// English words (merge, action, deep, latest, resolve, render, flush) and a
-// plain \b word \b test would keep passing on prose even after the API was
-// removed from the docs. Accepted contexts: backticked (`name`), an import
-// or JSX position ({ name, <name), or a call (name().
+// English words (merge, action, deep, latest, resolve, render, flush, why,
+// costs, feedback, subscriptions) and a plain \b word \b test would keep
+// passing on prose even after the API was removed from the docs. Accepted
+// contexts: backticked (`name`), an import or JSX position ({ name, <name),
+// an import-list member (, name, / , name }), or a call (name(). A bare
+// ", name" is not enough — prose commas (", why reads have to") would match.
 function appearsAsCode(name) {
-  return new RegExp(`[\`{,<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
+  return new RegExp(`[\`{<]\\s*${name}\\b|,\\s*${name}\\s*[,}]|\\b${name}\\s*\\(`).test(corpus);
 }
 
 const missing = allApis.filter((name) => !appearsAsCode(name));

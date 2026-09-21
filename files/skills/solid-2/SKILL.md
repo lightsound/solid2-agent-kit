@@ -912,7 +912,8 @@ store), and silent holds (`[SILENT_HOLD]` — a write held on async work with no
 ran while held; info from 100ms, warning from 200ms, tunable via
 `enable({ holds: { infoMs, warnMs } })`). `costs()`, `feedback()` (named imports), and
 `attribution.holds()` rank the session worst-first; `attribution.waterfalls()`,
-`navigations()`, and `interactions()` hold the fact tables behind the verdicts.
+`attribution.navigations()`, and `attribution.interactions()` hold the fact tables
+behind the verdicts.
 `subscriptions(scope)` (named import) lists a scope's current dependencies to compare
 against what it uses.
 
