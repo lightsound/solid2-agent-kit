@@ -51,7 +51,6 @@ const REQUIRED_APIS = [
   'omit',
   'snapshot',
   'deep',
-  'storePath',
   // context / rendering
   'useContext',
   'useHead',
@@ -75,8 +74,12 @@ const REQUIRED_APIS = [
   'reload',
   'handleRequest',
   'respond',
+  'REVALIDATE_ALL',
   'enableRichArguments',
   'markSafeError',
+  // error hooks
+  'configureClientErrors',
+  'configureServerErrors',
   'GET',
   'live',
   'query',
@@ -89,6 +92,11 @@ const REQUIRED_APIS = [
   'DEV',
   'OBSERVE',
   'attribution',
+  'why',
+  'costs',
+  'feedback',
+  'subscriptions',
+  'formatRerun',
   'captureArtifact',
 ];
 
