@@ -57,7 +57,14 @@ Steps:
      attribution-only store/list/effect costs) left unaddressed;
    - context values passed as snapshots instead of accessors/setters/stores;
    - components with conditional/early returns on reactive values.
-5. Verify any API you are not certain about against the official docs mirror
+5. If the change set touches stores, lists, async computations, actions, or effects, run
+   the skill's development loop against the dev server: `/__solid/diagnostics` `begin` →
+   exercise the changed UI → `whyDidRun` for the changed scopes / `costs` → `end`
+   (`@solidjs/diagnostics` installed), or an `isDev`-guarded
+   `attribution.enable({ log: false })` + `why()` / `costs()` / `feedback()`. Report
+   every coded warning, the silent holds in `feedback().sources`, and the top
+   `costs().scopes` entries as findings.
+6. Verify any API you are not certain about against the official docs mirror
    (`https://v2-rebuild--solid-docs-v2.netlify.app/llms.txt`); never trust Solid 1.x or
    React memory.
 

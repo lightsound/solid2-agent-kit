@@ -429,10 +429,30 @@ import { configureServerErrors } from '@solidjs/web';
 configureClientErrors({
   onError: (error, { ownerPath, boundaryPath }) => report(error, { ownerPath, boundaryPath }),
 });
-// server side (SSR renders and server functions); its return value, if any, is the
-// sanitized value the client receives instead of the original error
-configureServerErrors({ onError: (error, { kind, handling }) => report(error, { kind, handling }) });
+// server side (SSR renders and server functions); runs inside the request scope, so
+// getRequestEvent() works here. Return nothing, or a reference the user can quote —
+// NEVER the error itself: the return value replaces the sanitized value on the wire
+configureServerErrors({
+  onError(error, { kind, handling, ownerPath, boundaryPath, functionId, direct }) {
+    const ref = report(error, { site: `${kind}/${handling}`, ownerPath, boundaryPath, functionId, direct });
+    return new Error(`Something went wrong (ref ${ref})`);
+  },
+});
 ```
+
+**The server hook's return value goes on the wire.** What the client normally receives
+is the runtime's sanitized value (a generic `Error` outside the dev build). Returning
+the error object hands its `message`, stack, and whatever secret they carry to the
+browser. `kind`/`handling` name the road: `render` / `fallback` (an `<Errored>`
+rendered), `render` / `client` (a `<Loading>` fragment rejected, client re-renders),
+`render` / `failed` (request fails; return ignored), `render` / `serialize` (a
+hydration value would not serialize), `server-function` / `thrown` (`direct: true` for
+an in-process call during SSR), `server-function` / `channel` (a rejection or throw
+escaping through the result graph — a promise, an iterable, or a stream — after the
+head committed). A monitoring SDK's `init()` that
+registers this hook must load before the server graph — put it in the plugin's
+`start: { instrument: "./src/instrument.ts" }`, not at the top of an entry (see
+[Production observability](#production-observability-the-observe-build)).
 
 `render` / `hydrate` accept a per-root `onError` that wins over the ambient hook.
 Uncaught errors (`REACTIVITY_HALTED`) go to the platform's `reportError`, which every
@@ -850,8 +870,20 @@ an agent sneaks in fails the suite instead of scrolling by.
 
 ### Dev diagnostics and attribution
 
-Diagnostics come in two layers, both dev-build only (production strips them and `DEV`
-is `undefined` there). Always-on findings include misplaced reads
+Solid ships **three builds** of every runtime package, selected by export condition:
+
+| Build | Condition | Carries | `OBSERVE` | `DEV` |
+|---|---|---|---|---|
+| prod | default | the runtime + the two error hooks | `undefined` | `undefined` |
+| observe | `observe` | prod + records channel, diagnostics channel, attribution slot, server trace slot; no console output, no checks | object | `undefined` |
+| dev | `development` | observe + the development checks and the console reporter; unminified | object | object |
+
+`vite dev` is **always the dev build** (the `development` condition wins), so everything
+below works there with no configuration. The observe build is a *production* opt-in —
+see [Production observability](#production-observability-the-observe-build) — not a
+dev setting. Diagnostics come in two layers: **findings** (facts about a render, present
+in observe and dev) and **checks** (dev-only guidance printed by the console reporter).
+Always-on dev checks include misplaced reads
 (`[STRICT_READ_UNTRACKED]`, `[PENDING_ASYNC_UNTRACKED_READ]`), misplaced writes
 (`[REACTIVE_WRITE_IN_OWNED_SCOPE]` — since rc.9 also for store setters called in a
 component or root body, `[ASYNC_STORE_SETTER]` for a store setter callback that returns
@@ -873,8 +905,11 @@ Cost and responsiveness findings need the opt-in attribution engine, which recor
 every scope that re-ran, what changed to cause it, and how long it took. Since
 `solid-js` 2.0.0-rc.8 the engine lives behind its own subpath — `DEV.attribution`
 no longer exists (it is a type error; `DEV` holds only devtools hooks, graph
-traversal, and console reporting), and the low-level hook slot on `OBSERVE` is for
-engines and devtools, not app code. Since 2.0.0-rc.9 the folds, queries, and
+traversal, and console reporting). `OBSERVE` is the public observability surface on
+the observe and dev builds — `OBSERVE.records`, `OBSERVE.diagnostics`,
+`OBSERVE.exclude`, `OBSERVE.server.trace` are for app and tool code; only the
+`OBSERVE.attribution` hook slot (`install` / `withInteraction` / `withOrigin`) belongs
+to engines, routers, and devtools. Since 2.0.0-rc.9 the folds, queries, and
 formatters are **named exports** of that subpath, not methods of `attribution`
 (`attribution.why` / `.costs` / `.feedback` / `.subscriptions` / `.format` are type
 errors); `attribution` keeps `enable`, `disable`, `subscribe`, `markFlight`, and the
@@ -895,11 +930,15 @@ for (const event of why(total)) {
 (`log: true`); pass `{ log: false }` when you only want the coded findings and plan
 to query the tables yourself. Name the scopes you intend to interrogate
 (`createMemo(..., { name: "total" })`) — chains refer to nodes by name, and
-anonymous nodes print as `computed` / `effect` / `signal`. In production the import
-resolves to an inert same-surface twin whose `enable()` is a no-op, so
-with the `isDev` guard the cost is zero and the import can stay in the code. The
-split is pay-for-use: importing `costs` or `feedback` is what turns their tables on,
-so a records-only consumer (`attribution.subscribe(...)`) ships neither.
+anonymous nodes print as `computed` / `effect` / `signal`; component labels
+(`<Checkout>`) are always present under `vite dev` and survive minification only with
+the compiler's `componentNames` option (`solid({ observe: true })` turns it on). On the
+**prod build** the import resolves to an inert same-surface twin whose `enable()` is a
+no-op, so the import can stay in the code. On the **observe build** it is the real
+engine and an unguarded `enable()` records in production — keep the `isDev` guard
+unless recording in production is the intent. The split is pay-for-use: importing
+`costs` or `feedback` is what turns their tables on, so a records-only consumer
+(`attribution.subscribe(...)`) ships neither.
 
 While attribution is enabled, Solid also warns on its own about over-subscription,
 chained async waterfalls (`[ASYNC_WATERFALL]`), memos whose fresh-but-equal output
@@ -910,7 +949,10 @@ row-rebuilding lists (`[UNSTABLE_LIST_IDENTITY]` — key by id or reconcile into
 store), and silent holds (`[SILENT_HOLD]` — a write held on async work with no
 `isPending()` / `latest()` reader, optimistic value, `affects()` mark, or effect that
 ran while held; info from 100ms, warning from 200ms, tunable via
-`enable({ holds: { infoMs, warnMs } })`). `costs()`, `feedback()` (named imports), and
+`enable({ holds: { infoMs, warnMs } })`). A hold that *was* acknowledged but still ran
+long is `[LONG_HOLD]` (info from 500ms, warning from 1000ms;
+`enable({ longHolds: { infoMs, warnMs } })`) — the suggestion is a `<Loading on={...}>`
+boundary, never removing the hold. `costs()`, `feedback()` (named imports), and
 `attribution.holds()` rank the session worst-first; `attribution.waterfalls()`,
 `attribution.navigations()`, and `attribution.interactions()` hold the fact tables
 behind the verdicts.
@@ -920,6 +962,7 @@ against what it uses.
 For regression tests, `@solidjs/diagnostics` turns the same channels into assertions:
 
 ```ts
+import '@solidjs/diagnostics/vitest'; // registers the matchers (or list it in vitest `setupFiles`)
 import { captureArtifact } from '@solidjs/diagnostics';
 
 const { artifact } = await captureArtifact(() => {
@@ -939,22 +982,113 @@ verification loops: capture until the channel is quiet, scenario budgets as the
 definition of done, and hold/latency gates. See the debugging-reactivity guide in
 [references/official-docs.md](references/official-docs.md).
 
-With `@solidjs/diagnostics` in `devDependencies`, the Vite plugin's `diagnostics`
-option (auto-on; dev server only) injects the capture bridge and serves
-`POST /__solid/diagnostics`, so a live page can be interrogated with curl alone —
-no test harness:
+### Development loop: self-diagnose before finishing
 
-```sh
-curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"begin"}'
-# ... interact with the app in the browser ...
-curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"whyDidRun","params":{"name":"TodoRow"}}'
-curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"costs"}'
-curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"feedback"}'
-curl -X POST localhost:3000/__solid/diagnostics -d '{"method":"end"}'
+Enable observability in development **by default** and lean on it. The dev build
+already prints every check; the attribution engine is the part you turn on. Run the
+loop whenever a change touches **stores, lists, async computations, actions, or
+effects** — a pure markup or styling change does not need it.
+
+1. **Dev console is clean.** Reproduce the change in `vite dev`; zero `[CODE]` entries
+   is the bar (`[STRICT_READ_UNTRACKED]`, `[REACTIVE_WRITE_IN_OWNED_SCOPE]`,
+   `[ASYNC_STORE_SETTER]`, `[ASYNC_OUTSIDE_LOADING_BOUNDARY]`, …). Fix, do not silence.
+2. **Name the scopes you changed** (`createMemo(fn, { name: "total" })`,
+   `createStore(v, { name: "cart" })`) so chains and tables refer to them by name.
+3. **Record the interaction and ask.** First choice — no app code — is the diagnostics
+   endpoint: with `@solidjs/diagnostics` in `devDependencies`, the Vite plugin's
+   `diagnostics` option (auto-on when the package is declared; dev server only, never
+   under vitest, `vite build`, or preview) injects the capture bridge and serves
+   `/__solid/diagnostics`. `begin` enables attribution with `log: false` for the
+   session; `end` disables it and returns the artifact (`diagnostics`,
+   `attribution.{reruns, costs, holds, feedback}`, `records`):
+
+   ```sh
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"begin"}'
+   # ... perform the interaction in the browser ...
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"whyDidRun","params":{"name":"total"}}'
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"costs"}'
+   curl -X POST localhost:5173/__solid/diagnostics -d '{"method":"end"}'   # holds + feedback tables are in the result
+   ```
+
+   `GET` the endpoint for status and the method list (`begin` / `end` / `active` /
+   `whyDidRun` / `costs` — `feedback` and `holds` come back from `end`). With several
+   open tabs the first responder wins, so keep one page under test. Without
+   `@solidjs/diagnostics`, the in-code alternative is an `isDev`-guarded
+   `attribution.enable({ log: false })` in the client entry, then `why(scope)` /
+   `costs()` / `feedback()` from the console or a scratch effect — never `log: true`
+   left on (one collapsed `[why-run]` group per re-run) and never unguarded (on the
+   observe build it records in production).
+4. **Read the verdicts, then the tables.** Fix every coded warning the session raised
+   (`[SILENT_HOLD]`, `[IMMUTABLE_UPDATE_IN_STORE]`, `[UNSTABLE_LIST_IDENTITY]`,
+   `[EFFECT_RELAY_TEAR]`, `[EFFECT_WRITES_OWN_SOURCE]`, `[ASYNC_WATERFALL]`,
+   `[HOT_SCOPE_RERUNS]`). Then `costs().scopes` (self time, `wastedMs` for runs whose
+   result did not change), `costs().writes` (root writes by downstream work),
+   `feedback().sources` / `.interactions` / `.flights` / `.fallbacks` (silent holds,
+   held time per interaction, abandoned requests, fallback flashes). A scope that
+   re-runs more than its inputs change is a `why(scope)` question — the chain names the
+   write, the changed dependency, and the time.
+5. **Make it a test when it is worth keeping**: `captureArtifact` +
+   `toHaveNoDiagnostics()` / `toHaveNoSilentHolds()` / `toStayWithinRerunBudget(n,
+   { scope })` is the definition of done for the scenario you just tuned.
+
+The bundled `agent-loops` skill (`node_modules/@solidjs/diagnostics/skills/agent-loops/SKILL.md`)
+is the long form of this loop; `solid2-kit init` prints the devDependency note when it
+runs in a project.
+
+### Production observability: the observe build
+
+Everything above is the dev build. Records, traces, and attribution in **production**
+need the observe build, opted into per project — and it changes nothing under `vite dev`:
+
+```ts
+// vite.config.ts
+import solid from '@solidjs/vite-plugin';
+
+export default { plugins: [solid({ ssr: true, observe: true })] };
 ```
 
-`GET` the endpoint for status. With several open tabs the first responder wins,
-so keep one page under test.
+`observe: true` adds the `observe` condition to every environment (client and server,
+`vite build` and preview) and turns on the compiler's `componentNames` option so
+`ownerPath` / `boundaryPath` name components instead of `computed`. Without the plugin,
+set `resolve.conditions` (or `node --conditions=observe` for an unbundled server) and
+`componentNames` yourself. Cost in Solid's size suite: ~16.8 KB against ~15.3 KB brotli
+for a small client app; importing the attribution engine on top raises the cap to
+~27 KB (a separate entry — an observe build that never imports it never ships it). The
+two error hooks are **not** part of this: they fire on every build, prod included, only
+the paths are `undefined` there.
+
+- **Instrumentation order.** A monitoring SDK's `init()` (and `configureServerErrors`)
+  must run before the modules it patches load. `import "./instrument"` at the top of an
+  entry does not achieve that in ESM (static imports are hoisted in dependency order);
+  the plugin's `start: { instrument: "./src/instrument.ts" }` awaits that server-only
+  module before anything else in the server graph.
+- **Tracing.** The server continues an incoming W3C `traceparent` or originates one;
+  `getTraceContext()` from `@solidjs/web` reads it during the request (in-process
+  server-function calls included) — forward it downstream with
+  `headers: { ...getTraceContext()?.entries }`. The browser is told which trace the page
+  belongs to on `Server-Timing` and `<meta>` tags, but only when the incoming trace was
+  sampled or a provider answered; a page with no tracing tool sees no wire change. On
+  the observe build a tracing SDK supplies the trace with
+  `OBSERVE?.server.trace.provide((request) => ({ traceId, spanId, entries }))`, once per
+  request. Do not write middleware to inject trace headers.
+- **Records.** `OBSERVE?.records.subscribe(type, (event, live) => …)` delivers one plain
+  record per `"boundary"` (a `<Loading>` that waited on the server), `"invocation"`
+  (server-function execution), `"call"` (server-function call from the page — shares
+  `id` with its invocation), and `"frame"` (produced / applied). Records are
+  serializable data; live handles (request, args, the error as thrown) ride in the
+  second argument. Listeners run synchronously inside the runtime, **must not write
+  signals**, and should subscribe from a module that loads before the app.
+- **Interactions.** `attribution.enable()` then
+  `attribution.subscribe("interaction", (event) => …)` says what each click waited on
+  (`event.settledMs`, `event.holds[].blockers`, `event.holds[].holdMs`); a hold nothing acknowledged
+  is the dead click. The fold tables stay separate imports.
+- **What leaves the process.** Beyond names, four record fields carry page data —
+  `target` (element as `tag#id "text"`, 30 chars), `prev` / `value` previews (40 chars),
+  navigation `to` / `from` / `params`, and `data.error` on server render findings — an
+  exporter decides what to do with each. A tool that renders inside the app it watches
+  (devtools panel) marks its root with `OBSERVE?.exclude(getOwner()!)` inside its
+  `createRoot` so its own effects and stores never become findings; do not route its
+  writes through `runWithOwner` (that is a write in an owned scope).
 
 ## Client mode: no server HTML, no hydration reflexes
 
@@ -1406,6 +1540,12 @@ how to reuse. Prefer the form on the right.
 | `fallback={(err) => { captureException(err()); return <Fallback />; }}` | `configureClientErrors({ onError })` from `solid-js` (or `render(..., { onError })`), `configureServerErrors({ onError })` from `@solidjs/web` — once per error, with `ownerPath` / `boundaryPath` |
 | `latest(user) ?? placeholder` in a handler as a null-safe read | `latest()` throws `NotReadyError` before the first value in every scope; read settled values under `<Loading>`, or `await until(() => user())` |
 | `attribution.why(total)` / `attribution.format(e)` / `attribution.costs()` | named imports from `solid-js/attribution`: `why(total)`, `formatRerun(e)`, `costs()`, `feedback()`, `subscriptions(scope)` (rc.9) |
+| `attribution.enable()` unguarded in app code, or `enable()` with the default `log: true` left on | `if (isDev) attribution.enable({ log: false })` — on the observe build an unguarded `enable()` records in production; prefer the `/__solid/diagnostics` session (`begin` enables, `end` disables) so app code carries nothing |
+| `solid({ observe: true })` added "to see diagnostics in dev" | `vite dev` is always the dev build; `observe: true` is the production-observability opt-in (observe condition + `componentNames` for `vite build`/preview) |
+| `configureServerErrors({ onError: (e) => { report(e); return e; } })` | return nothing or a reference (`new Error(\`ref ${id}\`)`) — the return value replaces the sanitized wire value; the error itself leaks message/stack/secrets |
+| `import "./instrument"` at the top of the server entry for a monitoring SDK | `start: { instrument: "./src/instrument.ts" }` — ESM hoists static imports in dependency order, so the entry's own deps load first |
+| Express/middleware injecting `traceparent` / trace headers into responses | the runtime carries a sampled or provided trace on `Server-Timing` + `<meta>`; forward downstream with `getTraceContext()?.entries`; SDKs use `OBSERVE?.server.trace.provide` |
+| `OBSERVE.records.subscribe("call", (e) => setStats(...))` | listeners run synchronously inside the runtime and must not write signals; collect into a plain buffer and drain from outside |
 | `import { storePath } from "solid-js"` | gone from `solid-js` (rc.9); write draft setters `setState((d) => { d.user.name = "Grace"; })` |
 | `<meta name="description" content="...">` hardcoded in the document shell | `<Meta>` from `@solidjs/meta`. A static `<title>` is the fallback; other hardcoded tags coexist with the registry |
 | `useHead({ tag: "meta", ... })` for ordinary page tags | `<Title>` / `<Meta>` / `<Script>` (JSON-LD). `useHead` is the lower-level registry |
@@ -1609,9 +1749,12 @@ always-applied rules installed alongside this skill.
       writes paired with `isPending` / `latest` / optimistic values / `affects()`
       (no `[SILENT_HOLD]`). Attribution-only costs
       (`[IMMUTABLE_UPDATE_IN_STORE]`, `[UNSTABLE_LIST_IDENTITY]`, `[EFFECT_*]`)
-      checked via `attribution` + the named folds (`why`, `costs`, `feedback`) from
-      `solid-js/attribution` when touching stores, lists, or effects. Name
-      interrogated scopes (`{ name: "total" }`).
+      checked via the [development loop](#development-loop-self-diagnose-before-finishing)
+      (`/__solid/diagnostics` `begin` → interact → `whyDidRun` / `costs` → `end`, or an
+      `isDev`-guarded `attribution.enable({ log: false })` + `why` / `costs` /
+      `feedback`) whenever the change touched stores, lists, async, actions, or
+      effects. Name interrogated scopes (`{ name: "total" }`). `observe: true` is a
+      production opt-in, not a dev step.
 - [ ] If the project has a router: `createRouter({ routes })`, not JSX `<Route>` / `<A>`.
       One instance, no nested `<Router>`. Navigate with `useNavigate` / `<a href>`, not
       `window.location`. Router `action`/`query` come from `@solidjs/router` (POST forms + cache), not

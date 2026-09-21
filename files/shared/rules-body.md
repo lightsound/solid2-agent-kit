@@ -129,7 +129,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     Granularity is the expression (`isPending(() => item.quantity)` with
     `affects(item, "quantity")`). A hold with no feedback at all is `[SILENT_HOLD]`
     under attribution — always pair a held write with one of these questions, an
-    optimistic value, or `affects()`.
+    optimistic value, or `affects()`. When a change touches stores, lists, async,
+    actions, or effects, run the skill's development loop before finishing: dev console
+    free of `[CODE]` findings, then an attribution session (`/__solid/diagnostics`
+    `begin` → interact → `whyDidRun` / `costs` → `end`, or `isDev`-guarded
+    `attribution.enable({ log: false })`). `vite dev` is always the dev build;
+    `solid({ observe: true })` is the production-observability opt-in, not a dev step.
     "Prop with local edits" = writable derivation:
     `createSignal(() => props.value)` or `createStore(() => props.value, fallback)`.
     `createOptimistic` is for an in-flight mutation, not a local editing session.
@@ -191,6 +196,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     failures no global handler sees reach `configureClientErrors({ onError })` from
     `solid-js` (or `render(..., { onError })` per root) and `configureServerErrors({ onError })`
     from `@solidjs/web` — do not call `captureException` inside `<Errored fallback>`.
+    The server hook's return value replaces the sanitized error on the wire: return
+    nothing or a reference id, never the error itself (message/stack/secrets would
+    reach the browser).
     Making a client store "real" is additive: same setters, wrap mutations in
     `action`, swap `createOptimisticStore` and a file of server functions — do
     not rewrite `App.tsx` with loading/error branches.

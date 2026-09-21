@@ -74,6 +74,10 @@ const noInstall = runInit(target);
 if (noInstall.status !== 0 || !noInstall.stdout.includes('edit-time hooks not wired')) {
   fail('expected init without a local kit install to note that hooks were skipped', noInstall);
 }
+// Without @solidjs/diagnostics declared, init points at the devDependency.
+if (!noInstall.stdout.includes('add "@solidjs/diagnostics" to devDependencies')) {
+  fail('expected init to note the missing @solidjs/diagnostics devDependency', noInstall);
+}
 let cursorHooks = JSON.parse(readFileSync(join(target, '.cursor/hooks.json'), 'utf8'));
 if (cursorHooks.hooks.postToolUse.length !== 1) {
   fail('expected no cursor hook to be added without a local kit install', noInstall);
@@ -142,13 +146,21 @@ mkdirSync(join(customTarget, 'node_modules/solid2-agent-kit/bin'), { recursive: 
 writeFileSync(join(customTarget, 'node_modules/solid2-agent-kit/bin/solid2-kit.mjs'), '// stub\n');
 writeFileSync(
   join(customTarget, 'package.json'),
-  JSON.stringify({ scripts: { 'lint:solid': 'my custom gate' } }, null, 2),
+  JSON.stringify(
+    { scripts: { 'lint:solid': 'my custom gate' }, devDependencies: { '@solidjs/diagnostics': '^2.0.0-rc.9' } },
+    null,
+    2,
+  ),
 );
 const customRun = runInit(customTarget);
 if (customRun.status !== 0) fail('init with custom lint:solid failed', customRun);
 const customPkg = JSON.parse(readFileSync(join(customTarget, 'package.json'), 'utf8'));
 if (customPkg.scripts['lint:solid'] !== 'my custom gate') {
   fail('expected a pre-existing lint:solid script to be left untouched', customRun);
+}
+// With @solidjs/diagnostics declared, the devDependency note stays silent.
+if (customRun.stdout.includes('@solidjs/diagnostics')) {
+  fail('expected no @solidjs/diagnostics note when the package is declared', customRun);
 }
 
 // --no-hooks leaves hook configs alone even when the kit is installed.
@@ -166,4 +178,4 @@ try {
 }
 if (optOutWroteHooks) fail('expected --no-hooks to skip .cursor/hooks.json entirely', optOut);
 
-console.log('init hooks — OK (skip note without install, idempotent merge preserving user config, --no-hooks opt-out)');
+console.log('init hooks — OK (skip note without install, idempotent merge preserving user config, --no-hooks opt-out, diagnostics devDependency note)');

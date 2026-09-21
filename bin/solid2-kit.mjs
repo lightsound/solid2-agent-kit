@@ -270,6 +270,26 @@ function init() {
   console.log(`solid2-agent-kit v${VERSION} — installed for ${[wantCursor && 'Cursor', wantClaude && 'Claude Code'].filter(Boolean).join(' + ')}:`);
   for (const path of written.filter(Boolean)) console.log(`  ${relative(target, path) || '.'}`);
   if (hooksNote) console.log(`  note: ${hooksNote}`);
+  if (!hasDiagnosticsDependency(target)) {
+    console.log(
+      '  note: the solid-2 skill\'s development loop drives the dev server\'s /__solid/diagnostics endpoint; add "@solidjs/diagnostics" to devDependencies so @solidjs/vite-plugin serves it (auto-on when declared). Without it the fallback is an isDev-guarded attribution.enable({ log: false }).',
+    );
+  }
+}
+
+// Whether the consuming project declares @solidjs/diagnostics — the signal
+// @solidjs/vite-plugin uses to auto-enable the diagnostics endpoint. An
+// informational note only: `doctor` does not fail without it.
+function hasDiagnosticsDependency(target) {
+  const filePath = join(target, 'package.json');
+  if (!existsSync(filePath)) return true;
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    return true;
+  }
+  return '@solidjs/diagnostics' in { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies };
 }
 
 // --- check ------------------------------------------------------------------
