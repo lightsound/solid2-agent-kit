@@ -154,10 +154,11 @@ const allApis = [...new Set([...createApis, ...REQUIRED_APIS])].sort();
 // costs, feedback, subscriptions) and a plain \b word \b test would keep
 // passing on prose even after the API was removed from the docs. Accepted
 // contexts: backticked (`name`), an import or JSX position ({ name, <name),
-// an import-list member (, name, / , name }), or a call (name(). A bare
-// ", name" is not enough — prose commas (", why reads have to") would match.
+// or a call (name(). A comma is not a context — prose lists (", why reads
+// have to", "costs, holds, feedback") match it, and no entry needs it: an
+// import-list member follows `{` or is backticked somewhere in the docs.
 function appearsAsCode(name) {
-  return new RegExp(`[\`{<]\\s*${name}\\b|,\\s*${name}\\s*[,}]|\\b${name}\\s*\\(`).test(corpus);
+  return new RegExp(`[\`{<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
 }
 
 const missing = allApis.filter((name) => !appearsAsCode(name));
