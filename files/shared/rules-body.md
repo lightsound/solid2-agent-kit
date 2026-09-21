@@ -127,7 +127,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     first-load spinner (`<Loading>` owns that). Pass the accessor: `isPending(user)`,
     not `isPending(user())` (that evaluates the read before `isPending` runs).
     Granularity is the expression (`isPending(() => item.quantity)` with
-    `affects(item, "quantity")`).     A hold with no feedback at all is `[SILENT_HOLD]`
+    `affects(item, "quantity")`). A hold with no feedback at all is `[SILENT_HOLD]`
     under attribution — always pair a held write with one of these questions, an
     optimistic value, or `affects()`. When a change touches stores, lists, async,
     actions, or effects, run the skill's development loop before finishing: dev console
