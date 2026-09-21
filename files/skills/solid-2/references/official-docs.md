@@ -162,7 +162,6 @@ the error hooks fire on every build.
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/head/use-head.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/components/portal.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/components/dynamic.md
-- https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/components/dynamic-component.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/jsx-properties/ref.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/jsx-properties/class.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-web/jsx-properties/style.md
