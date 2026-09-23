@@ -2067,7 +2067,8 @@ always-applied rules installed alongside this skill.
       bind `latest(query)`; failures throw to `<Errored>`, never `{ success: false }`
       result objects checked at every read.
 - [ ] Lists via `<For>` (server/refetched rows keyed by stable id), conditionals via
-      ternary/`<Show>`; no `{list().map(...)}` in JSX; no `key` props; no `value()!`.
+      ternary/`<Show>`; no `{list().map(...)}` in JSX; no `key` props (except
+      `@solidjs/meta` tags); no `value()!`.
 - [ ] Effects are two-phase and only at imperative boundaries; apply does not read stores.
 - [ ] Async reads sit under `<Loading>` (the data slot, not chrome); errors under `<Errored>`.
       Reactive inputs of an async memo are read before the first `await`. No hand-rolled

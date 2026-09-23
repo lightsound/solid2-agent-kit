@@ -61,7 +61,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     that writes the event object; wrap it: `onClick={() => setCount((c) => c + 1)}`.
     Debounce at the handler (`onInput={debounce(...)}`), never as an effect copying
     one signal into another.
-7. **Lists use `<For>`**, never `{list().map(...)}` in reactive JSX and never `key` props.
+7. **Lists use `<For>`**, never `{list().map(...)}` in reactive JSX and never `key` props (only `@solidjs/meta` tags take `key`, as the tag's identity).
     `{todos().map((t) => <Row todo={t} />)}` *renders*, then recreates every row on each
     update. Row identity: default = item reference; `keyed={(item) => item.id}` = key function
     (child receives item as an accessor); `keyed={false}` = positional. **Rows from

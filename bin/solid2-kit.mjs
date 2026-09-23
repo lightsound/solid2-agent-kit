@@ -405,6 +405,71 @@ function actionAsyncFindings(content) {
   }));
 }
 
+// Solid 1.x signatures: `createEffect(fn)` (Solid 2 needs compute + apply),
+// `createEffect(fn, initialValue)`, and `createMemo(fn, initialValue[, options])`
+// (Solid 2's second memo argument is the options object). A second argument
+// that is a primitive or array literal is an initial value; functions,
+// identifiers, and object literals are left alone. A name this file imports
+// from another library (effector's one-argument `createEffect`) or declares
+// itself is not Solid's.
+const INITIAL_VALUE_LITERAL = /^(?:-?\d|['"`[]|true\b|false\b|null\b|undefined\b)/;
+const NOT_SOLID_CORE_MODULE = /^(?!(?:solid-js|@solidjs\/signals)$)/;
+
+// Blank type-argument lists (`Record<string, number>`, `Map<K, () => void>`)
+// so their commas do not split arguments. `<` counts only right after an
+// identifier: formatted comparisons have a space before it.
+function blankTypeArguments(text) {
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/(?<=[\w$])<(?:=>|[^<>=])*>/g, (typeArgs) => ' '.repeat(typeArgs.length));
+  } while (text !== previous);
+  return text;
+}
+
+function solid1SignatureFindings(content) {
+  const foreign = importedNames(content, NOT_SOLID_CORE_MODULE);
+  const matches = [];
+  for (const call of content.matchAll(
+    /(?<![.\w$])create(Effect|Memo)\s*(?:<(?:=>|[^<>]|<(?:=>|[^<>])*>)*>)?\s*\(/g,
+  )) {
+    const name = `create${call[1]}`;
+    if (foreign.has(name)) continue;
+    if (new RegExp(`\\b(?:function\\s*\\*?|const|let|var|class)\\s+${name}\\b`).test(content)) continue;
+    const open = call.index + call[0].length - 1;
+    const close = scanBalanced(content, open);
+    if (close === -1) continue;
+    const args = splitTopLevelArgs(blankTypeArguments(content.slice(open + 1, close)))
+      .map((arg) => arg.trim())
+      .filter(Boolean);
+    const initialValue = args.length >= 2 && INITIAL_VALUE_LITERAL.test(args[1]);
+    const legacy =
+      call[1] === 'Effect' ? args.length === 1 || initialValue : args.length >= 3 || initialValue;
+    if (legacy) matches.push({ index: call.index });
+  }
+  return matches;
+}
+
+// `key` is meaningless in Solid JSX except on the Solid Meta tags, where it
+// names the tag's identity (`<Meta key="og-image" …>`). The enclosing tag is
+// the nearest `<Name` (or `<Namespace.Name`) before the attribute.
+const META_MODULE = /^@solidjs\/meta$/;
+
+function reactKeyPropFindings(content) {
+  const metaTags = importedNames(content, META_MODULE);
+  const metaNamespaces = new Set(
+    [...content.matchAll(/\bimport\s+\*\s+as\s+([\w$]+)\s+from\s*['"]@solidjs\/meta['"]/g)].map((m) => m[1]),
+  );
+  const matches = [];
+  for (const attr of content.matchAll(/\skey=\{/g)) {
+    const opener = [...content.slice(0, attr.index).matchAll(/<([A-Za-z][\w$.]*)/g)].pop();
+    const tag = opener?.[1] ?? '';
+    if (metaTags.has(tag) || metaNamespaces.has(tag.split('.')[0])) continue;
+    matches.push({ index: attr.index });
+  }
+  return matches;
+}
+
 // TanStack Router for Solid exports names the Next.js / Solid Router 1.x rules
 // target (`useRouter()`, `notFound()`, `<Navigate>`). A match is exempt only
 // when this file binds that exact local name from one of these modules, so a
@@ -457,7 +522,19 @@ const CHECKS = [
     id: 'jsx-namespace-import',
     pattern: /import\s+(?:type\s+)?\{[^}]*\bJSX\b[^}]*\}\s*from\s+['"]solid-js['"]/g,
     message:
-      'Solid 2 does not export a `JSX` namespace from "solid-js" (TS2305). Children/return types are `Element` from "solid-js"; DOM-specific JSX types (JSX.IntrinsicElements, JSX.CSSProperties) come from "@solidjs/web".',
+      'Solid 2 does not export a `JSX` namespace from "solid-js" (TS2305). Import `JSX` from "@solidjs/web" (JSX.Element, JSX.IntrinsicElements, JSX.CSSProperties), or use `Element` from "solid-js" (aliased, e.g. `type Element as SolidElement`, where the DOM Element is also used).',
+  },
+  {
+    id: 'solid1-effect-memo-signature',
+    find: solid1SignatureFindings,
+    message:
+      'Solid 1.x signature. createEffect takes (compute, apply) — a single argument is an error in Solid 2. createMemo(fn, initialValue) is gone: the second argument is the options object; give the compute a default parameter instead (createMemo((prev = 0) => ...)).',
+  },
+  {
+    id: 'projection-destructure',
+    pattern: /\b(?:const|let|var)\s*\[[^\]]*\]\s*=\s*createProjection\b/g,
+    message:
+      'createProjection returns the store itself, not a [store, setter] tuple — destructuring it takes the first row. Write `const rows = createProjection(...)`.',
   },
   {
     // A two-phase createEffect whose apply is nothing but one (optionally
@@ -511,8 +588,9 @@ const CHECKS = [
   },
   {
     id: 'react-key-prop',
-    pattern: /\skey=\{/g,
-    message: 'React `key` prop has no meaning in Solid. Row identity belongs on <For keyed={...}>.',
+    find: reactKeyPropFindings,
+    message:
+      'React `key` prop has no meaning in Solid. Row identity belongs on <For keyed={...}>. (Only the @solidjs/meta tags take `key`, as the tag identity.)',
   },
   {
     // `{todos().map((t) => <Row />)}` renders then recreates every row.
@@ -577,8 +655,14 @@ const CHECKS = [
     message: 'Solid 1.x Vite plugin. Import `solid` from "@solidjs/vite-plugin".',
   },
   {
+    // Valueless attributes count too (`<input use:autofocus />`): followed by
+    // `/>`, `>`, or another attribute, unlike an unspaced object key
+    // (`{ on:true }`, `{ on:x = false }`, `{ attr:v as string }`); `as="font"`
+    // and SVG `in="…"` are still attributes. `prop:` is still a Solid 2
+    // namespace and is not listed.
     id: 'solid1-jsx-namespace',
-    pattern: /\b(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*=/g,
+    pattern:
+      /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?==|\s*\/?>|\s+(?!(?:as|satisfies|in|instanceof)\b(?!\s*=))[A-Za-z_${])/g,
     message:
       'Solid 1.x JSX namespace. Use ref callbacks (and directive factories), camelCase event props, and standard attributes.',
   },
