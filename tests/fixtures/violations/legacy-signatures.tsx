@@ -3,13 +3,15 @@ import { createEffect, createMemo, createProjection, createSignal } from 'solid-
 const [count] = createSignal(0);
 
 // Solid 1.x signatures: one-argument effect, effect with an initial value,
-// memo with an initial value (with and without options).
+// memo with an initial value (with and without options, and behind nested
+// type arguments).
 createEffect(() => {
   console.log(count());
 });
 createEffect((prev) => prev + count(), 0);
 const doubled = createMemo(() => count() * 2, 0);
 const labelled = createMemo((prev) => `${prev}${count()}`, '', { name: 'label' });
+const lookup = createMemo<Map<string, number>>(() => new Map(), undefined, { equals: false });
 
 // createProjection returns the store, not a tuple.
 const [rows] = createProjection<{ id: string }[]>((draft) => {
@@ -26,7 +28,7 @@ export function View() {
     <>
       <input use:autofocus />
       <Meta key={'x'} name="description" />
-      <p>{String(doubled()) + labelled() + rows.id}</p>
+      <p>{String(doubled()) + labelled() + rows.id + lookup().size}</p>
     </>
   );
 }

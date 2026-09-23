@@ -409,16 +409,37 @@ function actionAsyncFindings(content) {
 // `createEffect(fn, initialValue)`, and `createMemo(fn, initialValue[, options])`
 // (Solid 2's second memo argument is the options object). A second argument
 // that is a primitive or array literal is an initial value; functions,
-// identifiers, and object literals are left alone.
+// identifiers, and object literals are left alone. A name this file imports
+// from another library (effector's one-argument `createEffect`) or declares
+// itself is not Solid's.
 const INITIAL_VALUE_LITERAL = /^(?:-?\d|['"`[]|true\b|false\b|null\b|undefined\b)/;
+const NOT_SOLID_CORE_MODULE = /^(?!(?:solid-js|@solidjs\/signals)$)/;
+
+// Blank type-argument lists (`Record<string, number>`) so their commas do not
+// split arguments. `<` counts only right after an identifier: formatted
+// comparisons have a space before it.
+function blankTypeArguments(text) {
+  let previous;
+  do {
+    previous = text;
+    text = text.replace(/(?<=[\w$])<[^<>()=]*>/g, (typeArgs) => ' '.repeat(typeArgs.length));
+  } while (text !== previous);
+  return text;
+}
 
 function solid1SignatureFindings(content) {
+  const foreign = importedNames(content, NOT_SOLID_CORE_MODULE);
   const matches = [];
-  for (const call of content.matchAll(/(?<![.\w$])create(Effect|Memo)\s*(?:<[^>()]*>)?\s*\(/g)) {
+  for (const call of content.matchAll(
+    /(?<![.\w$])create(Effect|Memo)\s*(?:<(?:[^<>()]|<[^<>()]*>)*>)?\s*\(/g,
+  )) {
+    const name = `create${call[1]}`;
+    if (foreign.has(name)) continue;
+    if (new RegExp(`\\b(?:function\\s*\\*?|const|let|var|class)\\s+${name}\\b`).test(content)) continue;
     const open = call.index + call[0].length - 1;
     const close = scanBalanced(content, open);
     if (close === -1) continue;
-    const args = splitTopLevelArgs(content.slice(open + 1, close))
+    const args = splitTopLevelArgs(blankTypeArguments(content.slice(open + 1, close)))
       .map((arg) => arg.trim())
       .filter(Boolean);
     const initialValue = args.length >= 2 && INITIAL_VALUE_LITERAL.test(args[1]);
@@ -431,15 +452,19 @@ function solid1SignatureFindings(content) {
 
 // `key` is meaningless in Solid JSX except on the Solid Meta tags, where it
 // names the tag's identity (`<Meta key="og-image" …>`). The enclosing tag is
-// the nearest `<Name` before the attribute.
+// the nearest `<Name` (or `<Namespace.Name`) before the attribute.
 const META_MODULE = /^@solidjs\/meta$/;
 
 function reactKeyPropFindings(content) {
   const metaTags = importedNames(content, META_MODULE);
+  const metaNamespaces = new Set(
+    [...content.matchAll(/\bimport\s+\*\s+as\s+([\w$]+)\s+from\s*['"]@solidjs\/meta['"]/g)].map((m) => m[1]),
+  );
   const matches = [];
   for (const attr of content.matchAll(/\skey=\{/g)) {
     const opener = [...content.slice(0, attr.index).matchAll(/<([A-Za-z][\w$.]*)/g)].pop();
-    if (opener && metaTags.has(opener[1])) continue;
+    const tag = opener?.[1] ?? '';
+    if (metaTags.has(tag) || metaNamespaces.has(tag.split('.')[0])) continue;
     matches.push({ index: attr.index });
   }
   return matches;
@@ -630,10 +655,11 @@ const CHECKS = [
     message: 'Solid 1.x Vite plugin. Import `solid` from "@solidjs/vite-plugin".',
   },
   {
-    // Valueless attributes count too (`<input use:autofocus />`). `prop:` is
-    // still a Solid 2 namespace and is not listed.
+    // Valueless attributes count too (`<input use:autofocus />`): followed by
+    // `/>`, `>`, or another attribute, unlike an object key (`{ on:true }`).
+    // `prop:` is still a Solid 2 namespace and is not listed.
     id: 'solid1-jsx-namespace',
-    pattern: /\b(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?=\s*[=\s/>])/g,
+    pattern: /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?=\s*(?:=|\/?>)|\s+[A-Za-z_${])/g,
     message:
       'Solid 1.x JSX namespace. Use ref callbacks (and directive factories), camelCase event props, and standard attributes.',
   },
