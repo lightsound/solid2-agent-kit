@@ -184,7 +184,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     special; tests and imperative integration code must call `flush()` before observing
     updated *synchronous* state or DOM. Waiting on an async memo is
     `await resolve(() => value())` (or Testing Library async queries), not `flush()`.
-    Never call `flush()` inside an `action`, an `onSettled` callback (throws), or an
+    Never call `flush()` inside an `action`, an `onSettled` callback (throws in dev), or an
     effect callback (a no-op, `[FLUSH_IN_EFFECT_CALLBACK]`).
 14. Do not port these React tools — they have no Solid equivalent because the problems they
     solve don't exist: `useCallback`, `React.memo`, `forwardRef`, `useSyncExternalStore`,
