@@ -1354,6 +1354,7 @@ export const getProduct = query(async (id: string) => {
 // src/router.ts — defineRoute types params from the path (params.id: string)
 import { lazy } from 'solid-js';
 import { createRouter, defineRoute } from '@solidjs/router';
+import { getProduct } from './data/products';
 
 export const Router = createRouter({
   routes: [
@@ -1368,6 +1369,7 @@ export const Router = createRouter({
 // src/pages/Product.tsx
 import { createMemo } from 'solid-js';
 import type { RouteProps } from '@solidjs/router';
+import { getProduct } from '../data/products';
 
 export default function ProductPage(props: RouteProps<'/products/:id'>) {
   const product = createMemo(() => getProduct(props.params.id));
