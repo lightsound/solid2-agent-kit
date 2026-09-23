@@ -5,7 +5,7 @@
 // marker, sentence punctuation included) is not flagged as stale-guidance.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,8 @@ const expected = [
   'dep-vite-plugin-solid',
   'dep-eslint-plugin-solid',
   'solid-js-version',
+  'router-version',
+  'meta-version',
   'tsconfig-jsx',
   'tsconfig-jsx-import-source',
   'config-vite-plugin-solid',
@@ -93,4 +95,46 @@ if (stale.status === 0 || !stale.stderr.includes('[stale-guidance]') || !stale.s
   fail('expected a genuinely stale guidance version to fail doctor with stale-guidance', stale);
 }
 
-console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught)`);
+// A dist-tag range ("latest") only shows its line once installed: npm's
+// `latest` for @solidjs/router is 1.0.0 (Solid 1), the 2.x line is `next`.
+const tagged = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-tag-'));
+process.on('exit', () => rmSync(tagged, { recursive: true, force: true }));
+writeFileSync(
+  join(tagged, 'package.json'),
+  JSON.stringify({ name: 'consumer', dependencies: { 'solid-js': 'next', '@solidjs/router': 'latest' } }, null, 2),
+);
+const installRouter = (version) => {
+  mkdirSync(join(tagged, 'node_modules/@solidjs/router'), { recursive: true });
+  writeFileSync(
+    join(tagged, 'node_modules/@solidjs/router/package.json'),
+    JSON.stringify({ name: '@solidjs/router', version }),
+  );
+};
+const notInstalled = runDoctor(tagged);
+if (notInstalled.status !== 0) {
+  fail('expected an unresolved dist-tag range to pass doctor until it is installed', notInstalled);
+}
+installRouter('1.0.0');
+const latestRouter = runDoctor(tagged);
+if (latestRouter.status === 0 || !latestRouter.stderr.includes('[router-version] node_modules has @solidjs/router 1.0.0')) {
+  fail('expected @solidjs/router installed from `latest` (1.0.0) to fail doctor with router-version', latestRouter);
+}
+installRouter('2.0.0-next.27');
+const nextRouter = runDoctor(tagged);
+if (nextRouter.status !== 0) {
+  fail('expected @solidjs/router installed from `next` (2.0.0-next.27) to pass doctor', nextRouter);
+}
+
+// Bare-major ranges ("^1", "~0") name the 1.x line without a minor.
+const bareMajor = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-major-'));
+process.on('exit', () => rmSync(bareMajor, { recursive: true, force: true }));
+writeFileSync(
+  join(bareMajor, 'package.json'),
+  JSON.stringify({ name: 'consumer', dependencies: { 'solid-js': '^1', '@solidjs/router': '1', '@solidjs/meta': '~0' } }, null, 2),
+);
+const bareMajorRun = runDoctor(bareMajor);
+for (const id of ['solid-js-version', 'router-version', 'meta-version']) {
+  if (!bareMajorRun.stderr.includes(`[${id}]`)) fail(`expected a bare-major range to be reported as ${id}`, bareMajorRun);
+}
+
+console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; bare-major 1.x ranges caught)`);

@@ -3,6 +3,8 @@
 // and every expected violation id is reported on the violations fixtures.
 
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
@@ -89,6 +91,14 @@ if (storeAsyncHits !== 2) {
   fail(`expected 2 store-setter-async findings in store-async.tsx, saw ${storeAsyncHits}`, violations);
 }
 
+// TanStack Router imports exempt only the names they bind (the clean
+// fixture's useRouter()/notFound()/<Navigate> pass); Router 1.x <Navigate>,
+// an aliased-away useRouter(), and an unimported notFound() are still caught.
+const routerScopeHits = [...output.matchAll(/router-scope\.tsx:\d+ \[(?:next-nav|solid1-router)\]/g)].length;
+if (routerScopeHits !== 3) {
+  fail(`expected 3 next-nav/solid1-router findings in router-scope.tsx, saw ${routerScopeHits}`, violations);
+}
+
 // Explicit file mode: `check [files...]` gates only the named sources.
 const singleBad = spawnSync(
   process.execPath,
@@ -107,4 +117,47 @@ if (singleClean.status !== 0) {
   fail('expected file-mode check to pass on a clean fixture', singleClean);
 }
 
-console.log(`check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; file mode gated a single file)`);
+// A directory passed positionally (`check src`) is walked, not filtered out.
+const runPaths = (cwd, ...paths) =>
+  spawnSync(process.execPath, [kit, 'check', ...paths], { cwd, encoding: 'utf8' });
+const dirBad = runPaths(join(root, 'tests/fixtures'), 'violations');
+if (dirBad.status !== 1 || !dirBad.stderr.includes('[react-import]')) {
+  fail('expected `check violations` (directory argument) to fail with findings', dirBad);
+}
+const cleanCount = readdirSync(join(root, 'tests/fixtures/clean')).length;
+const dirClean = runPaths(join(root, 'tests/fixtures'), 'clean');
+if (dirClean.status !== 0 || !dirClean.stdout.includes(`(${cleanCount} files scanned)`)) {
+  fail(`expected \`check clean\` (directory argument) to pass with ${cleanCount} files scanned`, dirClean);
+}
+
+// A walk that finds no sources must not pass, and a missing path is an error.
+// node_modules and dot-directories are never walked. Named files with no
+// sources among them (a docs-only changed-file list) pass with nothing to check.
+const scratch = mkdtempSync(join(tmpdir(), 'solid2-kit-check-'));
+process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
+mkdirSync(join(scratch, 'src/node_modules/react'), { recursive: true });
+mkdirSync(join(scratch, 'src/.cache'), { recursive: true });
+writeFileSync(join(scratch, 'src/node_modules/react/index.tsx'), "import React from 'react';\n");
+writeFileSync(join(scratch, 'src/.cache/app.tsx'), "import React from 'react';\n");
+writeFileSync(join(scratch, 'src/notes.md'), '# notes\n');
+for (const [label, result] of [
+  ['default --dir src with no sources', runPaths(scratch)],
+  ['directory argument with no sources', runPaths(scratch, 'src')],
+  ['directory argument with no sources next to a non-source file', runPaths(scratch, 'src', 'src/notes.md')],
+]) {
+  if (result.status !== 2 || !result.stderr.includes('nothing was checked')) {
+    fail(`expected a 0-file walk (${label}) to exit 2 with "nothing was checked"`, result);
+  }
+}
+const docsOnly = runPaths(scratch, 'src/notes.md');
+if (docsOnly.status !== 0 || !docsOnly.stdout.includes('nothing to check')) {
+  fail('expected named non-source files only to pass with "nothing to check"', docsOnly);
+}
+const missingPath = runPaths(scratch, 'does-not-exist');
+if (missingPath.status !== 2 || !missingPath.stderr.includes('path not found')) {
+  fail('expected a missing path argument to exit 2 with "path not found"', missingPath);
+}
+
+console.log(
+  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; file mode gated a single file; directory arguments walked; 0-file walks and missing paths fail; docs-only file lists pass)`,
+);

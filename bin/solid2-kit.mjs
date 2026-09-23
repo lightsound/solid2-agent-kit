@@ -4,7 +4,7 @@
 //
 //   solid2-kit init  [--cursor] [--claude] [--no-hooks] [--target <dir>]
 //   solid2-kit sync  [--cursor] [--claude] [--no-hooks] [--target <dir>]   (alias of init)
-//   solid2-kit check [--dir <srcdir>] [--target <dir>] [files...]
+//   solid2-kit check [--dir <srcdir>] [--target <dir>] [paths...]
 //   solid2-kit doctor [--target <dir>]
 //   solid2-kit hook (claude|cursor)          (stdin: agent hook JSON payload)
 //
@@ -19,6 +19,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -404,6 +405,27 @@ function actionAsyncFindings(content) {
   }));
 }
 
+// TanStack Router for Solid exports names the Next.js / Solid Router 1.x rules
+// target (`useRouter()`, `notFound()`, `<Navigate>`). A match is exempt only
+// when this file binds that exact local name from one of these modules, so a
+// stray Next or Router 1.x call in the same file is still reported.
+const TANSTACK_ROUTER_MODULE = /^@tanstack\/(?:solid-router|router-core)$/;
+
+// Local names bound by `import [Default,] { a, b as c } from "<module>"`.
+function importedNames(content, moduleName) {
+  const names = new Set();
+  for (const decl of content.matchAll(
+    /\bimport\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
+  )) {
+    if (!moduleName.test(decl[2])) continue;
+    for (const specifier of decl[1].split(',')) {
+      const local = specifier.trim().replace(/^type\s+/, '').split(/\s+as\s+/).pop();
+      if (local) names.add(local);
+    }
+  }
+  return names;
+}
+
 const CHECKS = [
   {
     id: 'props-destructure-param',
@@ -560,6 +582,7 @@ const CHECKS = [
   {
     id: 'solid1-router',
     pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
+    exemptImportsFrom: TANSTACK_ROUTER_MODULE,
     message:
       'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active/data-pending + CSS, or useLinkState).',
   },
@@ -606,6 +629,7 @@ const CHECKS = [
     id: 'next-nav',
     pattern:
       /(?<![.\w])(?:useRouter|usePathname|revalidatePath|revalidateTag|notFound|hydrateRoot)\s*\(/g,
+    exemptImportsFrom: TANSTACK_ROUTER_MODULE,
     message:
       'Next.js / React DOM leftover. In-app navigation is useNavigate / <a href={Router.paths...}>; 404 is httpStatus(404); hydrate is hydrate(() => <App />, root).',
   },
@@ -716,11 +740,16 @@ function stripComments(content) {
   return out;
 }
 
+// Dependencies and dot-directories (.git, build caches, installed agent
+// guidance) are never project sources, so `check .` stays meaningful.
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(path);
-    else if (SOURCE_FILE.test(entry.name)) yield path;
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) yield* walk(path);
+    } else if (SOURCE_FILE.test(entry.name)) {
+      yield path;
+    }
   }
 }
 
@@ -733,7 +762,9 @@ function fileFindings(file, relativeTo) {
   const lines = raw.split('\n');
   const findings = [];
   for (const rule of CHECKS) {
+    const exempt = rule.exemptImportsFrom ? importedNames(content, rule.exemptImportsFrom) : null;
     for (const match of rule.find ? rule.find(content) : content.matchAll(rule.pattern)) {
+      if (exempt?.has(match[0].match(/[\w$]+/)[0])) continue;
       const lineNumber = content.slice(0, match.index).split('\n').length;
       findings.push(
         `${relative(relativeTo, file) || file}:${lineNumber} [${rule.id}] ${rule.message}\n  > ${lines[lineNumber - 1].trim()}`,
@@ -745,12 +776,30 @@ function fileFindings(file, relativeTo) {
 
 function check() {
   const target = resolve(flagValue('--target', '.'));
-  const fileArgs = positionalArgs();
+  const pathArgs = positionalArgs();
 
   let files;
-  if (fileArgs.length > 0) {
-    // Explicit file mode (used by agent hooks): check only the named sources.
-    files = fileArgs.map((file) => resolve(target, file)).filter((file) => SOURCE_FILE.test(file));
+  let scanned;
+  let walked = true;
+  if (pathArgs.length > 0) {
+    // Explicit path mode: named directories are walked, named files are
+    // checked when they are .ts/.tsx/.jsx sources.
+    files = [];
+    scanned = pathArgs;
+    walked = false;
+    for (const arg of pathArgs) {
+      const path = resolve(target, arg);
+      if (!existsSync(path)) {
+        console.error(`solid2-kit check — path not found: ${path}`);
+        process.exit(2);
+      }
+      if (statSync(path).isDirectory()) {
+        walked = true;
+        files.push(...walk(path));
+      } else if (SOURCE_FILE.test(path)) {
+        files.push(path);
+      }
+    }
   } else {
     const srcDir = resolve(target, flagValue('--dir', 'src'));
     if (!existsSync(srcDir)) {
@@ -758,6 +807,22 @@ function check() {
       process.exit(2);
     }
     files = [...walk(srcDir)];
+    scanned = [relative(target, srcDir) || '.'];
+  }
+
+  // A walk that found no sources points at the wrong tree; passing it would
+  // read as a clean gate in CI and in agent loops. A list of named files with
+  // no sources among them (changed-file pipelines on a docs-only change) has
+  // nothing to gate and passes.
+  if (files.length === 0 && !walked) {
+    console.log('solid2-kit check — OK (no .ts/.tsx/.jsx sources among the named files; nothing to check).');
+    return;
+  }
+  if (files.length === 0) {
+    console.error(
+      `solid2-kit check — no .ts/.tsx/.jsx sources found in ${scanned.join(', ')}; nothing was checked. Point --dir or [paths...] at the source tree.`,
+    );
+    process.exit(2);
   }
 
   let findings = 0;
@@ -1063,6 +1128,33 @@ const BANNED_DEPS = {
   vinxi: 'SolidStart 1.x toolchain. Solid 2 uses @solidjs/vite-plugin directly.',
 };
 
+// Packages whose npm `latest` dist-tag is still the Solid 1.x line (solid-js
+// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29): a bare `pnpm add <name>`
+// installs it. The Solid 2 releases are published under `next`.
+const SOLID2_LINE_PACKAGES = [
+  { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01](?:\.|$)/, fix: 'Install solid-js@next (^2).' },
+  {
+    name: '@solidjs/router',
+    id: 'router-version',
+    solid1: /^[\s^~=v]*[01](?:\.|$)/,
+    fix: 'Router 1.x is JSX <Route> with a solid-js ^1 peer; install @solidjs/router@next (2.x, createRouter({ routes })).',
+  },
+  {
+    name: '@solidjs/meta',
+    id: 'meta-version',
+    solid1: /^[\s^~=v]*0(?:\.|$)/,
+    fix: 'Meta 0.x is built for Solid 1 (<MetaProvider> required); install @solidjs/meta@next (1.x).',
+  },
+];
+
+function installedVersion(target, name) {
+  try {
+    return JSON.parse(readFileSync(join(target, 'node_modules', name, 'package.json'), 'utf8')).version;
+  } catch {
+    return undefined;
+  }
+}
+
 const CONFIG_SOURCE = /\.(?:m|c)?[jt]s$/;
 
 // Files installed by this kit that carry a version marker. When the kit
@@ -1079,9 +1171,21 @@ function doctorFindings(target) {
   for (const [name, message] of Object.entries(BANNED_DEPS)) {
     if (name in deps) report(`dep-${name.replace(/[@/]/g, '')}`, `package.json depends on "${name}". ${message}`);
   }
-  const solidRange = deps['solid-js'];
-  if (typeof solidRange === 'string' && /^[\s^~=v]*[01]\./.test(solidRange)) {
-    report('solid-js-version', `package.json pins solid-js "${solidRange}" — this kit teaches Solid 2.x; upgrade to ^2.`);
+  for (const { name, id, solid1, fix } of SOLID2_LINE_PACKAGES) {
+    const range = deps[name];
+    if (typeof range === 'string' && solid1.test(range)) {
+      report(id, `package.json pins ${name} "${range}" — the Solid 1.x line; this kit teaches Solid 2.x. ${fix}`);
+      continue;
+    }
+    // A range such as "latest" or "*" only shows its line once resolved.
+    if (range === undefined) continue;
+    const installed = installedVersion(target, name);
+    if (installed && solid1.test(installed)) {
+      report(
+        id,
+        `node_modules has ${name} ${installed} (package.json: "${range}") — the Solid 1.x line; this kit teaches Solid 2.x. ${fix}`,
+      );
+    }
   }
 
   for (const entry of readdirSync(target, { withFileTypes: true })) {
@@ -1183,7 +1287,7 @@ switch (command) {
         'Usage:',
         '  solid2-kit init  [--cursor] [--claude] [--no-hooks] [--target <dir>]  install/update guidance + edit hooks (default: both tools)',
         '  solid2-kit sync  [--cursor] [--claude] [--no-hooks] [--target <dir>]  alias of init (idempotent)',
-        '  solid2-kit check [--dir <srcdir>] [--target <dir>] [files...]         mechanical React/Solid 1.x pattern gate (default dir: src)',
+        '  solid2-kit check [--dir <srcdir>] [--target <dir>] [paths...]         mechanical React/Solid 1.x pattern gate (default dir: src)',
         '  solid2-kit doctor [--target <dir>]                                    project-wiring gate: deps, tsconfig, root configs',
         '  solid2-kit hook (claude|cursor)                                       edit-time gate for agent hooks (stdin: hook JSON payload)',
       ].join('\n'),
