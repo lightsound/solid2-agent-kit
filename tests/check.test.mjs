@@ -99,7 +99,7 @@ if (routerScopeHits !== 3) {
   fail(`expected 3 next-nav/solid1-router findings in router-scope.tsx, saw ${routerScopeHits}`, violations);
 }
 
-// Explicit file mode: `check [files...]` gates only the named sources.
+// Explicit file mode: `check [paths...]` gates only the named sources.
 const singleBad = spawnSync(
   process.execPath,
   [kit, 'check', join(root, 'tests/fixtures/violations/bad.tsx')],
