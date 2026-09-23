@@ -248,8 +248,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     read through a `live()` source: `live()` takes no part in revalidation or single-flight,
     so after `yield save()` alone the overlay drops before the stream echoes the write and
     the old value flashes back. Follow it with `yield until(...)`, not `refresh(liveStore)`
-    (that re-runs the derivation — the current stream closes and the source is called
-    again — and the flash remains). Skip `until` only for reactive clients (e.g. Convex)
+    (that re-runs the derivation — the stream closes and the source reconnects — so each
+    mutation costs a reconnect, and the flash remains whenever the new connection's first
+    value predates the write). Skip `until` only for reactive clients (e.g. Convex)
     whose subscriptions already carry the write when the mutation resolves. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`) — run `solid2-kit doctor`
     after touching `package.json` / tsconfig / root configs; it fails on React and Solid 1.x

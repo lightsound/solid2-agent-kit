@@ -656,8 +656,10 @@ function Auction(props: { id: string }) {
 ```
 
 Do not `refresh(auction)` in place of `until`: on a store derived from a live source it
-re-runs the derivation — the current stream is closed and `liveAuction()` is called
-again — and the old value still flashes back before the echo. Reactive clients whose
+re-runs the derivation — the current stream is closed and `liveAuction()` opens a new
+connection. That costs a reconnect per mutation and hides the flash only when the new
+connection's first value already includes the write; when the read side lags the write,
+the old value still flashes back before the echo. Reactive clients whose
 subscriptions already carry the write when the mutation resolves (e.g. Convex) need
 neither. The server side of `liveAuction` / `saveBid` is in
 [Server functions](#server-functions--use-server).
