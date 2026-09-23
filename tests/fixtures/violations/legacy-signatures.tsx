@@ -9,9 +9,10 @@ createEffect(() => {
   console.log(count());
 });
 createEffect((prev) => prev + count(), 0);
+createEffect<() => void>(() => () => count());
 const doubled = createMemo(() => count() * 2, 0);
 const labelled = createMemo((prev) => `${prev}${count()}`, '', { name: 'label' });
-const lookup = createMemo<Map<string, number>>(() => new Map(), undefined, { equals: false });
+const lookup = createMemo<Map<string, () => void>>(() => new Map(), undefined, { equals: false });
 
 // createProjection returns the store, not a tuple.
 const [rows] = createProjection<{ id: string }[]>((draft) => {

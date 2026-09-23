@@ -110,7 +110,7 @@ if (routerScopeHits !== 3) {
 const legacyHits = (id) =>
   [...output.matchAll(new RegExp(`legacy-signatures\\.tsx:\\d+ \\[${id}\\]`, 'g'))].length;
 for (const [id, count] of [
-  ['solid1-effect-memo-signature', 5],
+  ['solid1-effect-memo-signature', 6],
   ['projection-destructure', 1],
   ['solid1-jsx-namespace', 1],
   ['react-key-prop', 1],

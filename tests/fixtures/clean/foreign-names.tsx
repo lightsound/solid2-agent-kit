@@ -11,4 +11,9 @@ export const total = createMemo(() => 1, 0, 'total');
 
 // Object keys and `data-` attributes are not Solid 1.x JSX namespaces.
 export const flags = { on:true };
+export const cast = (v: unknown) => ({ attr:v as string });
+export const withDefault = (options: { on?: boolean }) => {
+  const { on:enabled = false } = options;
+  return enabled;
+};
 export const Marker = () => <div data-use:marker="1" />;

@@ -415,14 +415,14 @@ function actionAsyncFindings(content) {
 const INITIAL_VALUE_LITERAL = /^(?:-?\d|['"`[]|true\b|false\b|null\b|undefined\b)/;
 const NOT_SOLID_CORE_MODULE = /^(?!(?:solid-js|@solidjs\/signals)$)/;
 
-// Blank type-argument lists (`Record<string, number>`) so their commas do not
-// split arguments. `<` counts only right after an identifier: formatted
-// comparisons have a space before it.
+// Blank type-argument lists (`Record<string, number>`, `Map<K, () => void>`)
+// so their commas do not split arguments. `<` counts only right after an
+// identifier: formatted comparisons have a space before it.
 function blankTypeArguments(text) {
   let previous;
   do {
     previous = text;
-    text = text.replace(/(?<=[\w$])<[^<>()=]*>/g, (typeArgs) => ' '.repeat(typeArgs.length));
+    text = text.replace(/(?<=[\w$])<(?:=>|[^<>=])*>/g, (typeArgs) => ' '.repeat(typeArgs.length));
   } while (text !== previous);
   return text;
 }
@@ -431,7 +431,7 @@ function solid1SignatureFindings(content) {
   const foreign = importedNames(content, NOT_SOLID_CORE_MODULE);
   const matches = [];
   for (const call of content.matchAll(
-    /(?<![.\w$])create(Effect|Memo)\s*(?:<(?:[^<>()]|<[^<>()]*>)*>)?\s*\(/g,
+    /(?<![.\w$])create(Effect|Memo)\s*(?:<(?:=>|[^<>]|<(?:=>|[^<>])*>)*>)?\s*\(/g,
   )) {
     const name = `create${call[1]}`;
     if (foreign.has(name)) continue;
@@ -656,10 +656,12 @@ const CHECKS = [
   },
   {
     // Valueless attributes count too (`<input use:autofocus />`): followed by
-    // `/>`, `>`, or another attribute, unlike an object key (`{ on:true }`).
+    // `/>`, `>`, or another attribute, unlike an unspaced object key
+    // (`{ on:true }`, `{ on:x = false }`, `{ attr:v as string }`).
     // `prop:` is still a Solid 2 namespace and is not listed.
     id: 'solid1-jsx-namespace',
-    pattern: /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?=\s*(?:=|\/?>)|\s+[A-Za-z_${])/g,
+    pattern:
+      /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?==|\s*\/?>|\s+(?!(?:as|satisfies|in|instanceof)\b)[A-Za-z_${])/g,
     message:
       'Solid 1.x JSX namespace. Use ref callbacks (and directive factories), camelCase event props, and standard attributes.',
   },

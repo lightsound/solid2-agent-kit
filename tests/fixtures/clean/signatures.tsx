@@ -27,6 +27,7 @@ const tripled = createMemo(() => count() * 3, options);
 const running = createMemo((prev: number = 0) => prev + count());
 const byName = createMemo((): Record<string, number> => ({ count: count() }), { name: 'byName' });
 const picked = createMemo((): Pick<{ a: number; b: string }, 'a'> => ({ a: count() }));
+const handlers = createMemo((): Map<string, () => void> => new Map(), { name: 'handlers' });
 const small = createMemo(() => count() < 3, { name: 'small' } as MemoOptions<boolean>);
 
 const [selectedId] = createSignal('a');
@@ -39,7 +40,7 @@ const isSelected = createProjection<Record<string, boolean>>((draft) => {
 export function Head(props: { mixed: boolean; image: string }) {
   return (
     <>
-      <PageTitle key={'title'}>{String(doubled() + tripled() + running() + byName().count + picked().a)}</PageTitle>
+      <PageTitle key={'title'}>{String(doubled() + tripled() + running() + byName().count + picked().a + handlers().size)}</PageTitle>
       <Meta key={'social-image'} property="og:image" content={props.image} />
       <SolidMeta.Link key={'canonical'} rel="canonical" href={String(small())} />
       <input type="checkbox" prop:indeterminate={props.mixed} checked={isSelected.a} />
