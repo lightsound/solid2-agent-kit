@@ -43,6 +43,7 @@ const expected = [
   'solid-js-version',
   'router-version',
   'meta-version',
+  'tanstack-router-version',
   'tsconfig-jsx',
   'tsconfig-jsx-import-source',
   'config-vite-plugin-solid',
@@ -125,6 +126,45 @@ if (nextRouter.status !== 0) {
   fail('expected @solidjs/router installed from `next` (2.0.0-next.27) to pass doctor', nextRouter);
 }
 
+// TanStack Router's `latest` is 1.x (solid-js ^1.9 peer); the Solid 2 line is
+// 2.0.0-rc.x on `rc`. `check` exempts its useRouter/notFound/<Navigate> in
+// every major, so doctor is the gate that sees a 1.x install.
+const tanstack = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-tanstack-'));
+process.on('exit', () => rmSync(tanstack, { recursive: true, force: true }));
+const tanstackRun = (range, installed) => {
+  writeFileSync(
+    join(tanstack, 'package.json'),
+    JSON.stringify({ name: 'consumer', dependencies: { 'solid-js': 'next', '@tanstack/solid-router': range } }, null, 2),
+  );
+  rmSync(join(tanstack, 'node_modules'), { recursive: true, force: true });
+  if (installed) {
+    mkdirSync(join(tanstack, 'node_modules/@tanstack/solid-router'), { recursive: true });
+    writeFileSync(
+      join(tanstack, 'node_modules/@tanstack/solid-router/package.json'),
+      JSON.stringify({ name: '@tanstack/solid-router', version: installed }),
+    );
+  }
+  return runDoctor(tanstack);
+};
+for (const [range, installed, label] of [
+  ['latest', '1.170.36', 'installed from `latest`'],
+  ['^1.170.36', undefined, 'declared ^1.170.36'],
+  ['~1', undefined, 'declared ~1'],
+]) {
+  const result = tanstackRun(range, installed);
+  if (result.status === 0 || !result.stderr.includes('[tanstack-router-version]')) {
+    fail(`expected @tanstack/solid-router ${label} to fail doctor with tanstack-router-version`, result);
+  }
+}
+for (const [range, installed, label] of [
+  ['rc', '2.0.0-rc.8', 'installed from `rc`'],
+  ['^2.0.0-rc.8', undefined, 'declared ^2.0.0-rc.8'],
+  ['latest', undefined, 'declared `latest` but not installed yet'],
+]) {
+  const result = tanstackRun(range, installed);
+  if (result.status !== 0) fail(`expected @tanstack/solid-router ${label} to pass doctor`, result);
+}
+
 // Bare-major ranges ("^1", "~0") name the 1.x line without a minor.
 const bareMajor = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-major-'));
 process.on('exit', () => rmSync(bareMajor, { recursive: true, force: true }));
@@ -137,4 +177,4 @@ for (const id of ['solid-js-version', 'router-version', 'meta-version']) {
   if (!bareMajorRun.stderr.includes(`[${id}]`)) fail(`expected a bare-major range to be reported as ${id}`, bareMajorRun);
 }
 
-console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; bare-major 1.x ranges caught)`);
+console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; TanStack Router 1.x declared or installed caught, 2.x rc passed; bare-major 1.x ranges caught)`);

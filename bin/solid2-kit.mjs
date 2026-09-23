@@ -408,7 +408,10 @@ function actionAsyncFindings(content) {
 // TanStack Router for Solid exports names the Next.js / Solid Router 1.x rules
 // target (`useRouter()`, `notFound()`, `<Navigate>`). A match is exempt only
 // when this file binds that exact local name from one of these modules, so a
-// stray Next or Router 1.x call in the same file is still reported.
+// stray Next or Router 1.x call in the same file is still reported. TanStack
+// Router 1.x (Solid 1) and 2.x (Solid 2) export the same names from the same
+// module, so the major is invisible here; doctor's tanstack-router-version
+// reads it from package.json / node_modules.
 const TANSTACK_ROUTER_MODULE = /^@tanstack\/(?:solid-router|router-core)$/;
 
 // Local names bound by `import [Default,] { a, b as c } from "<module>"`.
@@ -787,10 +790,15 @@ function check() {
     files = [];
     scanned = pathArgs;
     walked = false;
+    // A missing path is always an error: a deleted file, a misspelled file, and
+    // a renamed source directory look the same here, and only the list's
+    // producer knows which it was.
     for (const arg of pathArgs) {
       const path = resolve(target, arg);
       if (!existsSync(path)) {
-        console.error(`solid2-kit check — path not found: ${path}`);
+        console.error(
+          `solid2-kit check — path not found: ${path} (drop deleted files from a changed-file list with \`git diff --name-only --diff-filter=d\`)`,
+        );
         process.exit(2);
       }
       if (statSync(path).isDirectory()) {
@@ -1129,8 +1137,9 @@ const BANNED_DEPS = {
 };
 
 // Packages whose npm `latest` dist-tag is still the Solid 1.x line (solid-js
-// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29): a bare `pnpm add <name>`
-// installs it. The Solid 2 releases are published under `next`.
+// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29, @tanstack/solid-router 1.x):
+// a bare `pnpm add <name>` installs it. The Solid 2 releases are published
+// under `next` (TanStack: `rc`, 2.0.0-rc.x).
 const SOLID2_LINE_PACKAGES = [
   { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01](?:\.|$)/, fix: 'Install solid-js@next (^2).' },
   {
@@ -1144,6 +1153,12 @@ const SOLID2_LINE_PACKAGES = [
     id: 'meta-version',
     solid1: /^[\s^~=v]*0(?:\.|$)/,
     fix: 'Meta 0.x is built for Solid 1 (<MetaProvider> required); install @solidjs/meta@next (1.x).',
+  },
+  {
+    name: '@tanstack/solid-router',
+    id: 'tanstack-router-version',
+    solid1: /^[\s^~=v]*[01](?:\.|$)/,
+    fix: 'TanStack Router 1.x has a solid-js ^1.9 peer; install @tanstack/solid-router@rc (2.x, solid-js 2 peer).',
   },
 ];
 
