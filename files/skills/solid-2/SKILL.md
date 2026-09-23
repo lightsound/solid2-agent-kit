@@ -1462,9 +1462,11 @@ Only POST forms are accepted. Bind extra args with `.with(id)` (they go in the
 action URL). `onSubmit={(e) => { e.preventDefault(); fetch(...) }}` *runs* and
 drops the no-JS form fallback. `useAction` is JS-only for the same reason.
 Optimistic rows for a router form keep the `<form>` and add no core `action`: read the
-list with `createOptimisticStore(() => getList(), [])` and register
+list `query` with `createOptimisticStore(() => getList(), [])` and register
 `save.onSubmit((form) => setList((d) => { d.push({ …, pending: true }); }))` in the
-component — the hook runs inside the action's transaction, so the row is an overlay.
+component — the hook runs inside the action's transaction, so the row is an overlay,
+replaced on settle by the revalidated `query` (a plain server-function read is not
+revalidated, so the row just disappears).
 `useSubmissions` keeps only completions with a result or error; observe void and
 redirect completions with `save.onSettled(hook)`.
 
