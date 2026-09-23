@@ -104,10 +104,9 @@ if (routerScopeHits !== 3) {
 // Solid 1.x effect/memo signatures (one-arg effect, effect and memo initial
 // values), a destructured createProjection, valueless `use:` directives (one
 // before an `as` attribute), and `key` on a local component that only shares
-// a Solid Meta tag's name. The
-// clean fixtures' Solid 2 signatures, `prop:`, Solid Meta `key`s (named,
-// aliased, and namespace imports), and names bound by another library or a
-// local declaration pass.
+// a Solid Meta tag's name. The clean fixtures' Solid 2 signatures, `prop:`,
+// Solid Meta `key`s (named, aliased, and namespace imports), and names bound
+// by another library or a local declaration pass.
 const legacyHits = (id) =>
   [...output.matchAll(new RegExp(`legacy-signatures\\.tsx:\\d+ \\[${id}\\]`, 'g'))].length;
 for (const [id, count] of [
