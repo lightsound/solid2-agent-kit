@@ -131,8 +131,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     during refetch (`isPending` for the indicator). Use `on={id()}` (the *value*, not the
     accessor) only when that identity change should show the fallback again. `on` compares
     with `!==` (several keys: one string such as `` `${a()}/${b()}` ``, never a fresh array)
-    and takes effect only when no reader outside the boundary waits on the same write —
-    which also makes it the way to let one slow panel stop holding the whole page. Do not start `fetch` (or any request) at component-body top
+    and takes effect only when no reader outside the boundary waits on the same write
+    (that is how one slow panel stops holding the page). Do not start `fetch` (or any request) at component-body top
     level — that runs once at mount and is not a reactive source. Do not `try/catch` `NotReadyError` around a read, and do not
     use `loadingValue` / `seedLoadingValue` as the default first-flight UI — those skip
     `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer, and not a
@@ -281,9 +281,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
 22. Miscellaneous defaults: SSR-stable element ids come from `createUniqueId()` (never
     `Math.random()` or hardcoded duplicates); pass store data to `structuredClone` /
     `postMessage` / logs via `snapshot(store)` (proxies fail or leak reactivity) — a
-    read-only view, not a copy: unchanged subtrees are the store's own objects, so mutating
-    it (a library's `arr.sort()`) corrupts the store silently; `structuredClone(snapshot(store))`
-    for an editable copy; render
+    view, not a copy: unchanged subtrees are the store's own objects, so mutating it (a
+    library's `arr.sort()`) silently changes the store; copy with `structuredClone(snapshot(store))`; render
     modals/tooltips/overlays through `<Portal>` from `@solidjs/web`; mutations whose writes
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
     the sync mutation *is* the prediction (an overlay, discarded on settle). Durable data
