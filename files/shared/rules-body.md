@@ -510,8 +510,7 @@ When unsure about any API, verify against the official Solid 2.0 docs — fetcha
 listed in `references/official-docs.md` next to the `solid-2` skill. Do not guess from
 Solid 1.x or React memory.
 
-`createRenderEffect` exists in Solid 2 but is not a default, and `createTrackedEffect` is
-`@deprecated` since 2.0.0-rc.9: new code uses two-phase `createEffect` or `onSettled`. `storePath`
+`createRenderEffect` exists in Solid 2 but is not a default. `storePath`
 (the 1.x path-setter migration helper) is no longer exported from `solid-js` as of
 2.0.0-rc.9 — convert path setters to draft setters instead of importing it from
 `@solidjs/signals`.
