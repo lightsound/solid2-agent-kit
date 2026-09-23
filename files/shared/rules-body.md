@@ -80,8 +80,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `(v) => setX(v)` (an assignment or setter returns its value; dev throws
     `invalid cleanup value`, production fails on the next run, and either halts the whole
     reactive system). An `apply` that only calls a local setter is still rule 4 with a
-    block body — make it a derivation. Register an effect's cleanup by returning it from `apply` —
-    `onCleanup` there never runs (`[NO_OWNER_CLEANUP]`).
+    block body — make it a derivation. Register an effect's cleanup by returning it
+    from `apply` — `onCleanup` there never runs (`[NO_OWNER_CLEANUP]`).
     Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
     `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest
     primitives. Skip the initial run with `{ defer: true }`. Most React `useEffect` code should not become an effect at all — see the skill.
@@ -358,7 +358,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     (`aria-current` / `data-active` / `data-pending` + CSS; `useLinkState` /
     `useIsRouting` in JSX) — never hand-rolled `location.pathname` comparisons. Trusted identity is
     `getRequestEvent()`, never a caller-supplied user id. Unscripted (no-JS) POST
-    forms use a router `action` — `<form action={save} method="post">` — not the
+    forms use a router `action` over a `(form: FormData)` server function (the post
+    arrives as one `FormData`; other signatures make `action={save}` TS2322) —
+    `<form action={save} method="post">` — not the
     function's `.url` and not a hand-built `/_server/` path: a bare `"use server"`
     function has no typed `.url` (TS2339). `.url` is typed only on `GET()` / `live()`
     references, for `method="get"` search forms. Client history adapters do not select the SSR URL — pass

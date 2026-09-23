@@ -1701,6 +1701,12 @@ Unscripted (no-JS) POST forms go through a router action —
 hand-built `/_server/` URL, and not `action={createTodo.url}`: a bare `"use server"`
 function keeps its declared function type, so `.url` is a type error (TS2339) even
 though it exists at runtime (and `serverFunctionActionUrl(createTodo)` is TS2345).
+The post arrives as one `FormData` argument, so the function behind `action={save}`
+takes `(form: FormData)` and parses and validates the fields inside; any other
+signature makes `action={save}` a type error (TS2322). Bind leading JSON-safe
+arguments with `action={save.with(id)}` for `(id: string, form: FormData)`; a function
+that already has a typed signature gets a separate `FormData` server function that
+parses and calls it.
 `.url` is typed only on `GET()` / `live()` references, which makes it the address of a
 `method="get"` search form (`action={searchProducts.url}`; the function receives the
 fields as `URLSearchParams`). GET forms are only for idempotent search — do not use a
@@ -1802,7 +1808,7 @@ how to reuse. Prefer the form on the right.
 | `createMemo(async fn, { loadingValue })` / `{ seedLoadingValue: true }` as the default first-flight UI | `<Loading>` for first flight; those options are escape hatches (store projections use `seedLoadingValue`) |
 | `setSubmitted(true)` + an effect that watches it | do the work in the handler or an `action` |
 | `findUser(userId)` with the id from the client as identity | `getRequestEvent()!.locals.userId` |
-| `action={"/_server/" + id}` / `action={createTodo.url}` on a POST form | a router action: `const save = action(createTodo, "create-todo")` + `<form action={save} method="post">` — `.url` on a bare `"use server"` function is TS2339; it is typed only on `GET()` / `live()` references (GET search forms) |
+| `action={"/_server/" + id}` / `action={createTodo.url}` on a POST form | a router action: `const save = action(createTodo, "create-todo")` + `<form action={save} method="post">` over a `(form: FormData)` server function (other signatures are TS2322) — `.url` on a bare `"use server"` function is TS2339; it is typed only on `GET()` / `live()` references (GET search forms) |
 | `<form method="get" action={update.url}>` for a mutation | GET forms only for idempotent search; mutations are POST |
 | `window.location.href = ...` / `history.pushState` | `useNavigate()` or `<a href={Router.paths...}>` |
 | `class={{ active: location.pathname === "/about" }}` hand-rolled link state | CSS on automatic `aria-current` / `data-active` / `data-pending`; `useLinkState` in JSX, `useIsRouting()` for progress bars |
