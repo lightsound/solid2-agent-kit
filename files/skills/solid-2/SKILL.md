@@ -1549,8 +1549,11 @@ guides).
 Router's `action` / `query` apply them (navigate, revalidate), and a no-JS form post
 follows the 302. Any other caller — a core `action`, an event handler, a plain
 `createMemo(() => listOrders())` — receives the raw `Response` as the resolved value:
-no navigation happens, and the type still claims your data. So the redirect guard
-belongs to functions called through the router:
+no navigation happens, and the type still claims your data. (When a mounted router's
+single-flight hook intercepts a direct POST call, it does navigate, but the call
+resolves to `null`; a direct `GET()` read always gets the `Response`.) Either way the
+caller never gets its data, so the redirect guard belongs to functions called through
+the router:
 
 ```ts
 import { getRequestEvent, redirect, respond } from '@solidjs/web';
@@ -1826,7 +1829,7 @@ how to reuse. Prefer the form on the right.
 | a held write with no feedback anywhere | pair it with `isPending()` / `latest()` / an optimistic value / `affects()` — otherwise dev + attribution reports `[SILENT_HOLD]` |
 | `refresh(getUser.key)` / `revalidate(user)` / `return refresh()` from `"use server"` | three APIs: core `refresh(source)` reruns a reactive source; router `revalidate(getUser.key)` invalidates the query cache; `return reload({ revalidate: "todos" })` asks the integration to refresh cached data |
 | `return redirect(...)` as the only redirect shape | guards `throw redirect("/sign-in")`; `redirect()` / `respond()` take `revalidate` too when the mutation also moves or returns a value |
-| `throw redirect("/sign-in")` / `return reload(...)` in a function called directly (core `action`, handler, plain memo) | only Solid Router `action` / `query` (and no-JS form posts) apply them — a direct caller resolves to the raw `Response`, typed as your data, with no navigation. Without the router: `throw respond(null, { status: 401 })` or return a value and navigate in the caller |
+| `throw redirect("/sign-in")` / `return reload(...)` in a function called directly (core `action`, handler, plain memo) | only Solid Router `action` / `query` (and no-JS form posts) apply them — a direct caller resolves to the raw `Response` (or `null` when the router's single-flight hook intercepts a POST call), typed as your data. Without the router: `throw respond(null, { status: 401 })` or return a value and navigate in the caller |
 | `submission.clear()` from an effect | on dismiss/resubmit only — from an effect, errors flash and vanish |
 | `revalidate(liveSource)` | `live()` updates through the open stream; do not revalidate it |
 | `refresh(user)` without `affects` when the reload should look pending | pair `affects(user)` with `refresh(user)` — a bare `refresh` re-asks quietly |

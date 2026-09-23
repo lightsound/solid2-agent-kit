@@ -43,8 +43,9 @@ Steps:
    - route `preload` returning data read as `props.data` (captured once per match)
      instead of `void getX(params.id)` + `createMemo(() => getX(props.params.id))`;
    - `throw redirect()` / `return reload()` in server functions called without Solid
-     Router `action`/`query` (the caller gets a raw `Response`), and POST forms built
-     on a bare function's `.url` (TS2339) instead of a router `action`;
+     Router `action`/`query` (the caller gets a raw `Response` or `null`, never its
+     data), and POST forms built on a bare function's `.url` (TS2339) instead of a
+     router `action`;
      error reporting done as a side effect inside `fallback` instead of
      `configureClientErrors` / `configureServerErrors` / `render(..., { onError })`;
    - store setter callbacks that `await` (the draft closes when the callback returns —

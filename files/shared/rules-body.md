@@ -376,8 +376,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     on a `GET()`-declared read; the method mirrors the operation). `redirect()` /
     `reload()` are signals for an integration: Solid Router's `action` / `query` and the
     no-JS form post apply them. A direct caller — a core `action`, a handler, a plain
-    memo — just receives the raw `Response` as the resolved value (typed as your data,
-    no navigation). So guards `throw redirect("/sign-in")` only when router `action` /
+    memo — never gets your data: it receives the raw `Response` as the resolved value
+    (typed as your data, no navigation); only when a mounted router's single-flight
+    hook intercepts a direct POST call does it navigate, and the call then resolves to
+    `null`. So guards `throw redirect("/sign-in")` only when router `action` /
     `query` call the function; without the router, `throw respond(null, { status: 401 })`
     (the call rejects) or return a value and navigate in the caller. `redirect()` /
     `respond()` take `revalidate` like `reload()`. Cache GET reads with
