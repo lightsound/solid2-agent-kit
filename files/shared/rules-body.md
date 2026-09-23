@@ -435,11 +435,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     there is no handler to wrap. Request middleware is
     `start: { middleware: "./src/middleware.ts" }`, not Express `app.use`. Do not return
     components from `"use server"` unless the project already enabled the
-    experimental `serverFunctions.components` flag. JSON-encodable server-function arguments
-    only, unless `enableRichArguments()` (from `@solidjs/web/server-functions/rich-args`)
-    runs once at startup — with generated entries, at `src/App.tsx` module scope
-    (`Date` / `Map` / `Set` throw without it; a single `File` / `Blob` / `FormData`
-    argument needs no opt-in). Declare live reads as `live(GET(fn))` —
+    experimental `serverFunctions.components` flag. Server-function arguments are JSON:
+    send `Date` / `Map` / `Set` as ISO strings / arrays (they throw otherwise; one `File` /
+    `Blob` / `FormData` argument travels natively). `enableRichArguments()` from
+    `@solidjs/web/server-functions/rich-args` (at `src/App.tsx` module scope) lifts that,
+    but in rc.9 importing it fails `vite build` (`"./client" is not exported`). Declare live reads as `live(GET(fn))` —
     `live()` outermost. A plain `async function*` server function is an event stream on
     one connection (no reconnect when it drops); `live()` is one value that changes over
     time and reconnects. `live()` connection state is

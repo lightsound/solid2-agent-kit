@@ -1634,10 +1634,12 @@ client-facing failures — a *returned* `respond()` resolves the call whatever i
 status, so `return respond({ error }, { status: 400 })` reads as success to the UI,
 `useSubmissions`, and the optimistic overlay. Do not `return Response.json(...)` from
 `"use server"` — that is HTTP-handler control flow; `return respond(value, { status: 201 })`
-is success metadata a scripted caller unwraps. JSON-encodable arguments only unless
-`enableRichArguments()` (from `@solidjs/web/server-functions/rich-args`) runs once at
-startup — with generated entries, at `src/App.tsx` module scope (`Date` / `Map` / `Set`
-throw without it; a single `File` / `Blob` / `FormData` argument travels natively).
+is success metadata a scripted caller unwraps. Arguments are JSON: send `Date` / `Map` /
+`Set` as ISO strings / arrays (they throw otherwise; one `File` / `Blob` / `FormData`
+argument travels natively). `enableRichArguments()` from
+`@solidjs/web/server-functions/rich-args` (at `src/App.tsx` module scope) lifts that, but
+in rc.9 importing it fails `vite build` (`"./client" is not exported` — the dev server
+works, so the break shows only at build).
 `GET()` is only for idempotent reads (URLs leak into logs/history);
 import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
 Reads are function calls too: `GET(async (id) => { "use server"; ... })` is invoked
