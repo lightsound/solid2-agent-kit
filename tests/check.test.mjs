@@ -124,7 +124,9 @@ const dirBad = runPaths(join(root, 'tests/fixtures'), 'violations');
 if (dirBad.status !== 1 || !dirBad.stderr.includes('[react-import]')) {
   fail('expected `check violations` (directory argument) to fail with findings', dirBad);
 }
-const cleanCount = readdirSync(join(root, 'tests/fixtures/clean')).length;
+const cleanCount = readdirSync(join(root, 'tests/fixtures/clean')).filter((name) =>
+  /(?<!\.d)\.(?:tsx?|jsx)$/.test(name),
+).length;
 const dirClean = runPaths(join(root, 'tests/fixtures'), 'clean');
 if (dirClean.status !== 0 || !dirClean.stdout.includes(`(${cleanCount} files scanned)`)) {
   fail(`expected \`check clean\` (directory argument) to pass with ${cleanCount} files scanned`, dirClean);
