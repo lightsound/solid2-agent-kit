@@ -22,7 +22,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -777,6 +777,16 @@ function fileFindings(file, relativeTo) {
   return findings;
 }
 
+// Changed-file lists (`git diff --name-only | xargs solid2-kit check`) name
+// deleted files. A missing path that could only have been a file — it has an
+// extension, or is a dot-name, which walks never descend into — has nothing
+// left to gate. An extensionless or slash-terminated path may have been a
+// directory, and a typo'd source tree must not pass as a clean run.
+function namesFile(arg) {
+  const name = basename(arg);
+  return !/[\\/]$/.test(arg) && (extname(name) !== '' || name.startsWith('.'));
+}
+
 function check() {
   const target = resolve(flagValue('--target', '.'));
   const pathArgs = positionalArgs();
@@ -793,7 +803,10 @@ function check() {
     for (const arg of pathArgs) {
       const path = resolve(target, arg);
       if (!existsSync(path)) {
-        console.error(`solid2-kit check — path not found: ${path}`);
+        if (namesFile(arg)) continue;
+        console.error(
+          `solid2-kit check — path not found: ${path} (a path without an extension may name a source directory, so it must exist; drop deleted files from a changed-file list with \`git diff --name-only --diff-filter=d\`)`,
+        );
         process.exit(2);
       }
       if (statSync(path).isDirectory()) {
@@ -815,8 +828,8 @@ function check() {
 
   // A walk that found no sources points at the wrong tree; passing it would
   // read as a clean gate in CI and in agent loops. A list of named files with
-  // no sources among them (changed-file pipelines on a docs-only change) has
-  // nothing to gate and passes.
+  // no sources among them (changed-file pipelines on a docs- or delete-only
+  // change) has nothing to gate and passes.
   if (files.length === 0 && !walked) {
     console.log('solid2-kit check — OK (no .ts/.tsx/.jsx sources among the named files; nothing to check).');
     return;
