@@ -66,6 +66,7 @@ read these before writing route JSX.
 ## Guides and migration
 
 - https://v2-rebuild--solid-docs-v2.netlify.app/guides/avoid-unnecessary-effects.md
+- https://v2-rebuild--solid-docs-v2.netlify.app/guides/state-management.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/guides/debugging-reactivity.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/guides/performance.md
 - https://v2-rebuild--solid-docs-v2.netlify.app/guides/observability.md
