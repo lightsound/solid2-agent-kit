@@ -404,6 +404,27 @@ function actionAsyncFindings(content) {
   }));
 }
 
+// TanStack Router for Solid exports names the Next.js / Solid Router 1.x rules
+// target (`useRouter()`, `notFound()`, `<Navigate>`). A match is exempt only
+// when this file binds that exact local name from one of these modules, so a
+// stray Next or Router 1.x call in the same file is still reported.
+const TANSTACK_ROUTER_MODULE = /^@tanstack\/(?:solid-router|router-core)$/;
+
+// Local names bound by `import [Default,] { a, b as c } from "<module>"`.
+function importedNames(content, moduleName) {
+  const names = new Set();
+  for (const decl of content.matchAll(
+    /\bimport\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
+  )) {
+    if (!moduleName.test(decl[2])) continue;
+    for (const specifier of decl[1].split(',')) {
+      const local = specifier.trim().replace(/^type\s+/, '').split(/\s+as\s+/).pop();
+      if (local) names.add(local);
+    }
+  }
+  return names;
+}
+
 const CHECKS = [
   {
     id: 'props-destructure-param',
@@ -560,6 +581,7 @@ const CHECKS = [
   {
     id: 'solid1-router',
     pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
+    exemptImportsFrom: TANSTACK_ROUTER_MODULE,
     message:
       'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active/data-pending + CSS, or useLinkState).',
   },
@@ -606,6 +628,7 @@ const CHECKS = [
     id: 'next-nav',
     pattern:
       /(?<![.\w])(?:useRouter|usePathname|revalidatePath|revalidateTag|notFound|hydrateRoot)\s*\(/g,
+    exemptImportsFrom: TANSTACK_ROUTER_MODULE,
     message:
       'Next.js / React DOM leftover. In-app navigation is useNavigate / <a href={Router.paths...}>; 404 is httpStatus(404); hydrate is hydrate(() => <App />, root).',
   },
@@ -733,7 +756,9 @@ function fileFindings(file, relativeTo) {
   const lines = raw.split('\n');
   const findings = [];
   for (const rule of CHECKS) {
+    const exempt = rule.exemptImportsFrom ? importedNames(content, rule.exemptImportsFrom) : null;
     for (const match of rule.find ? rule.find(content) : content.matchAll(rule.pattern)) {
+      if (exempt?.has(match[0].match(/[\w$]+/)[0])) continue;
       const lineNumber = content.slice(0, match.index).split('\n').length;
       findings.push(
         `${relative(relativeTo, file) || file}:${lineNumber} [${rule.id}] ${rule.message}\n  > ${lines[lineNumber - 1].trim()}`,

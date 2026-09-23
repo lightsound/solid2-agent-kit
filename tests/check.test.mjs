@@ -89,6 +89,14 @@ if (storeAsyncHits !== 2) {
   fail(`expected 2 store-setter-async findings in store-async.tsx, saw ${storeAsyncHits}`, violations);
 }
 
+// TanStack Router imports exempt only the names they bind (the clean
+// fixture's useRouter()/notFound()/<Navigate> pass); Router 1.x <Navigate>,
+// an aliased-away useRouter(), and an unimported notFound() are still caught.
+const routerScopeHits = [...output.matchAll(/router-scope\.tsx:\d+ \[(?:next-nav|solid1-router)\]/g)].length;
+if (routerScopeHits !== 3) {
+  fail(`expected 3 next-nav/solid1-router findings in router-scope.tsx, saw ${routerScopeHits}`, violations);
+}
+
 // Explicit file mode: `check [files...]` gates only the named sources.
 const singleBad = spawnSync(
   process.execPath,
