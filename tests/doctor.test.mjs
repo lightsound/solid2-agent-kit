@@ -125,4 +125,16 @@ if (nextRouter.status !== 0) {
   fail('expected @solidjs/router installed from `next` (2.0.0-next.27) to pass doctor', nextRouter);
 }
 
-console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed)`);
+// Bare-major ranges ("^1", "~0") name the 1.x line without a minor.
+const bareMajor = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-major-'));
+process.on('exit', () => rmSync(bareMajor, { recursive: true, force: true }));
+writeFileSync(
+  join(bareMajor, 'package.json'),
+  JSON.stringify({ name: 'consumer', dependencies: { 'solid-js': '^1', '@solidjs/router': '1', '@solidjs/meta': '~0' } }, null, 2),
+);
+const bareMajorRun = runDoctor(bareMajor);
+for (const id of ['solid-js-version', 'router-version', 'meta-version']) {
+  if (!bareMajorRun.stderr.includes(`[${id}]`)) fail(`expected a bare-major range to be reported as ${id}`, bareMajorRun);
+}
+
+console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; bare-major 1.x ranges caught)`);

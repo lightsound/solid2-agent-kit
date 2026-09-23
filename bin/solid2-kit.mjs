@@ -1132,17 +1132,17 @@ const BANNED_DEPS = {
 // 1.9, @solidjs/router 1.0, @solidjs/meta 0.29): a bare `pnpm add <name>`
 // installs it. The Solid 2 releases are published under `next`.
 const SOLID2_LINE_PACKAGES = [
-  { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01]\./, fix: 'Install solid-js@next (^2).' },
+  { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01](?:\.|$)/, fix: 'Install solid-js@next (^2).' },
   {
     name: '@solidjs/router',
     id: 'router-version',
-    solid1: /^[\s^~=v]*[01]\./,
+    solid1: /^[\s^~=v]*[01](?:\.|$)/,
     fix: 'Router 1.x is JSX <Route> with a solid-js ^1 peer; install @solidjs/router@next (2.x, createRouter({ routes })).',
   },
   {
     name: '@solidjs/meta',
     id: 'meta-version',
-    solid1: /^[\s^~=v]*0\./,
+    solid1: /^[\s^~=v]*0(?:\.|$)/,
     fix: 'Meta 0.x is built for Solid 1 (<MetaProvider> required); install @solidjs/meta@next (1.x).',
   },
 ];
