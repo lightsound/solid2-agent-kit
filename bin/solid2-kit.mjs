@@ -4,7 +4,7 @@
 //
 //   solid2-kit init  [--cursor] [--claude] [--no-hooks] [--target <dir>]
 //   solid2-kit sync  [--cursor] [--claude] [--no-hooks] [--target <dir>]   (alias of init)
-//   solid2-kit check [--dir <srcdir>] [--target <dir>] [files...]
+//   solid2-kit check [--dir <srcdir>] [--target <dir>] [paths...]
 //   solid2-kit doctor [--target <dir>]
 //   solid2-kit hook (claude|cursor)          (stdin: agent hook JSON payload)
 //
@@ -19,6 +19,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -739,11 +740,16 @@ function stripComments(content) {
   return out;
 }
 
+// Dependencies and dot-directories (.git, build caches, installed agent
+// guidance) are never project sources, so `check .` stays meaningful.
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(path);
-    else if (SOURCE_FILE.test(entry.name)) yield path;
+    if (entry.isDirectory()) {
+      if (entry.name !== 'node_modules' && !entry.name.startsWith('.')) yield* walk(path);
+    } else if (SOURCE_FILE.test(entry.name)) {
+      yield path;
+    }
   }
 }
 
@@ -770,12 +776,24 @@ function fileFindings(file, relativeTo) {
 
 function check() {
   const target = resolve(flagValue('--target', '.'));
-  const fileArgs = positionalArgs();
+  const pathArgs = positionalArgs();
 
   let files;
-  if (fileArgs.length > 0) {
-    // Explicit file mode (used by agent hooks): check only the named sources.
-    files = fileArgs.map((file) => resolve(target, file)).filter((file) => SOURCE_FILE.test(file));
+  let scanned;
+  if (pathArgs.length > 0) {
+    // Explicit path mode: named directories are walked, named files are
+    // checked when they are .ts/.tsx/.jsx sources.
+    files = [];
+    scanned = pathArgs;
+    for (const arg of pathArgs) {
+      const path = resolve(target, arg);
+      if (!existsSync(path)) {
+        console.error(`solid2-kit check — path not found: ${path}`);
+        process.exit(2);
+      }
+      if (statSync(path).isDirectory()) files.push(...walk(path));
+      else if (SOURCE_FILE.test(path)) files.push(path);
+    }
   } else {
     const srcDir = resolve(target, flagValue('--dir', 'src'));
     if (!existsSync(srcDir)) {
@@ -783,6 +801,16 @@ function check() {
       process.exit(2);
     }
     files = [...walk(srcDir)];
+    scanned = [relative(target, srcDir) || '.'];
+  }
+
+  // A run that scanned nothing verified nothing; passing it would read as a
+  // clean gate in CI and in agent loops.
+  if (files.length === 0) {
+    console.error(
+      `solid2-kit check — no .ts/.tsx/.jsx sources found in ${scanned.join(', ')}; nothing was checked. Point --dir or [paths...] at the source tree.`,
+    );
+    process.exit(2);
   }
 
   let findings = 0;
@@ -1247,7 +1275,7 @@ switch (command) {
         'Usage:',
         '  solid2-kit init  [--cursor] [--claude] [--no-hooks] [--target <dir>]  install/update guidance + edit hooks (default: both tools)',
         '  solid2-kit sync  [--cursor] [--claude] [--no-hooks] [--target <dir>]  alias of init (idempotent)',
-        '  solid2-kit check [--dir <srcdir>] [--target <dir>] [files...]         mechanical React/Solid 1.x pattern gate (default dir: src)',
+        '  solid2-kit check [--dir <srcdir>] [--target <dir>] [paths...]         mechanical React/Solid 1.x pattern gate (default dir: src)',
         '  solid2-kit doctor [--target <dir>]                                    project-wiring gate: deps, tsconfig, root configs',
         '  solid2-kit hook (claude|cursor)                                       edit-time gate for agent hooks (stdin: hook JSON payload)',
       ].join('\n'),
