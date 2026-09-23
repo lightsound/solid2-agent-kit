@@ -67,6 +67,8 @@ const expected = [
   'effect-sync-signal',
   'action-plain-async',
   'store-setter-async',
+  'solid1-effect-memo-signature',
+  'projection-destructure',
 ];
 const missing = expected.filter((id) => !found.has(id));
 if (missing.length > 0) {
@@ -97,6 +99,23 @@ if (storeAsyncHits !== 2) {
 const routerScopeHits = [...output.matchAll(/router-scope\.tsx:\d+ \[(?:next-nav|solid1-router)\]/g)].length;
 if (routerScopeHits !== 3) {
   fail(`expected 3 next-nav/solid1-router findings in router-scope.tsx, saw ${routerScopeHits}`, violations);
+}
+
+// Solid 1.x effect/memo signatures (one-arg effect, effect and memo initial
+// values), a destructured createProjection, a valueless `use:` directive, and
+// `key` on a local component that only shares a Solid Meta tag's name. The
+// clean fixture's Solid 2 signatures, `prop:`, and Solid Meta `key`s pass.
+const legacyHits = (id) =>
+  [...output.matchAll(new RegExp(`legacy-signatures\\.tsx:\\d+ \\[${id}\\]`, 'g'))].length;
+for (const [id, count] of [
+  ['solid1-effect-memo-signature', 4],
+  ['projection-destructure', 1],
+  ['solid1-jsx-namespace', 1],
+  ['react-key-prop', 1],
+]) {
+  if (legacyHits(id) !== count) {
+    fail(`expected ${count} ${id} finding(s) in legacy-signatures.tsx, saw ${legacyHits(id)}`, violations);
+  }
 }
 
 // Explicit file mode: `check [paths...]` gates only the named sources.
@@ -210,5 +229,5 @@ if (unfilteredRun.status !== 2 || !unfilteredRun.stderr.includes('--diff-filter=
 }
 
 console.log(
-  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; file mode gated a single file; directory arguments walked; 0-file walks and every missing path fail; docs-only file lists pass; --diff-filter=d pipeline gates survivors)`,
+  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; Solid 1.x effect/memo signatures, projection destructuring, and valueless directives caught while Solid Meta key and prop: pass; file mode gated a single file; directory arguments walked; 0-file walks and every missing path fail; docs-only file lists pass; --diff-filter=d pipeline gates survivors)`,
 );
