@@ -1433,8 +1433,8 @@ replaces the previous one.
 
 `live()` yields **current state** (each yield replaces the last); do not treat
 it as an append-only event log. A reconnect calls the function again and its first
-yield replaces the stale answer, so read that first value from persistent storage —
-not from generator locals or per-connection memory. Until the first yield it is unsettled
+yield replaces the stale answer, so read that first value from the state mutations write
+to (database, shared server state) — not from generator locals or per-connection memory. Until the first yield it is unsettled
 (`<Loading>`), same as a Promise; later yields are updates — the fallback does
 not return.
 Wire status is a side channel on the **iterable the `live()` call returns**,
@@ -1535,10 +1535,10 @@ how to reuse. Prefer the form on the right.
 | `throw new Error("expired")` from a server function (prod) | `throw markSafeError(...)` or `throw respond(body, { status })` |
 | `const r = await api.x(); if (!r.ok) ...` result-object checks at every read | throw unusable responses; contain each region with `<Errored>` |
 | `GET(async (id) => { "use server"; await db.delete(id) })` | mutations stay on POST; `GET()` is for idempotent reads |
-| `live()` yields as an event log to append | each yield **replaces** the current answer; yield current state first, read from persistent storage — a reconnect calls the function again, so generator locals or per-connection memory are not the source |
+| `live()` yields as an event log to append | each yield **replaces** the current answer; yield current state first, read from the state mutations write to — a reconnect calls the function again, so generator locals or per-connection memory are not the source |
 | `GET(live(async function* () { ... }))` | `live(GET(async function* () { ... }))` — `live()` outermost; `live()` alone streams over POST |
 | a plain `async function*` `"use server"` stream for a value that must survive a dropped connection | `live()` — a plain stream is an event sequence on one connection (`for await`, accumulate); nothing reopens it when it drops |
-| `yield saveBid(...)` then `refresh(auction)` on a store derived from `live()` | `yield saveBid(...); yield until(() => auction.highBid >= amount, { timeout })` — `live()` is outside revalidation/single-flight; `refresh` re-runs the derivation (closes the stream, calls the source again) and the old value still flashes back before the echo |
+| `yield saveBid(...)` then `refresh(auction)` on a store derived from `live()` | `yield saveBid(...); yield until(() => auction.highBid >= amount, { timeout })` — `live()` is outside revalidation/single-flight; `refresh` re-runs the derivation (closes the stream, calls the source again): a reconnect per mutation, and the old value still flashes back whenever the new first value predates the write |
 | `<article innerHTML={html()}>…children…</article>` | `innerHTML` **or** children, not both |
 | `fallback={(error) => <p>{error.message}</p>}` | `error` is an accessor: `error().message` (or `String(error())`) |
 | `import { action } from "solid-js"` on a `<form>` | `import { action } from "@solidjs/router"` + `<form action={save} method="post">` (core `action` is a generator transaction, not a form URL) |
