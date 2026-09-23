@@ -79,7 +79,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `(t) => { document.title = t; }`, never `(t) => (document.title = t)` or
     `(v) => setX(v)` (an assignment or setter returns its value; dev throws
     `invalid cleanup value`, production fails on the next run, and either halts the whole
-    reactive system). Register an effect's cleanup by returning it from `apply` —
+    reactive system). An `apply` that only calls a local setter is still rule 4 with a
+    block body — make it a derivation. Register an effect's cleanup by returning it from `apply` —
     `onCleanup` there never runs (`[NO_OWNER_CLEANUP]`).
     Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
     `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest

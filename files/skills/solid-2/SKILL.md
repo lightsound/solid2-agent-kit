@@ -1744,7 +1744,7 @@ how to reuse. Prefer the form on the right.
 | `createStore({ selected: new Set<string>() })` + `draft.selected.add(id)` | `selected: {} as Record<string, true>` + `draft.selected[id] = true` / `delete draft.selected[id]`, or `draft.selected = new Set([...draft.selected, id])` — `Map` / `Set` / `Date` are stored as-is, not tracked |
 | `draft.todos = fresh` (wholesale fresh-tree assignment) | `reconcile(fresh, "id")`, or function-form `createStore` / `createProjection` (auto-keyed by `"id"`). Removal via `setTodos((t) => t.filter(...))` is fine — survivors keep identity |
 | `createEffect(() => user, (u) => { log(u.name); })` | `createEffect(() => user.name, (name) => { log(name); })` |
-| `createEffect(() => title(), (t) => (document.title = t))` / `(v) => setX(v)` | `(t) => { document.title = t; }` — apply returns a cleanup or nothing; any other return value halts reactivity |
+| `createEffect(() => title(), (t) => (document.title = t))` / `(v) => setX(v)` | `(t) => { document.title = t; }` — apply returns a cleanup or nothing; any other return value halts reactivity. An apply that only calls a local setter is rule 4 even with braces (`solid2-kit check` flags it): use a (writable) derivation |
 | `<Loading fallback={<PageSkeleton />}>{/* header + data */}</Loading>` | wrap only the data slot; chrome stays outside |
 | `<Loading on={id} fallback={...}>` (the accessor) | `on={id()}` — a value, so identity changes can show fallback |
 | `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
