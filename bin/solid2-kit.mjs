@@ -778,11 +778,12 @@ function fileFindings(file, relativeTo) {
 }
 
 // Changed-file lists (`git diff --name-only | xargs solid2-kit check`) name
-// deleted files. A missing path that could only have been a file — it has an
-// extension, or is a dot-name, which walks never descend into — has nothing
-// left to gate. An extensionless or slash-terminated path may have been a
-// directory, and a typo'd source tree must not pass as a clean run. A typo'd
-// file name looks the same as a deleted one, so skipped paths are listed.
+// deleted files. A missing path shaped like a file — it has an extension, or
+// is a dot-name, which walks never descend into — is taken as deleted and has
+// nothing left to gate. An extensionless or slash-terminated path may have
+// been a directory, and a typo'd source tree must not pass as a clean run.
+// Neither a misspelled file nor a missing dotted directory (`routes.v2`) can
+// be told apart from a deletion here, so skipped paths are listed.
 function namesFile(arg) {
   const name = basename(arg);
   return !/[\\/]$/.test(arg) && (extname(name) !== '' || name.startsWith('.'));
