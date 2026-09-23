@@ -46,7 +46,7 @@ npx github:lightsound/solid2-agent-kit check --dir app
 npx github:lightsound/solid2-agent-kit check src/App.tsx src/routes
 
 # only the files a change touched: deleted files with an extension (or a
-# dot-name) are skipped; a missing extensionless path fails like a typo'd
+# dot-name) are skipped and listed; a missing extensionless path fails like a typo'd
 # directory, so add --diff-filter=d when a change deletes one (LICENSE)
 git diff --name-only main | xargs npx github:lightsound/solid2-agent-kit check
 

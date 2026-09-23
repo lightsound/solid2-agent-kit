@@ -168,13 +168,18 @@ for (const [label, result] of [
 
 // `git diff --name-only | xargs solid2-kit check` names deleted files: a
 // missing path with an extension (or a dot-name) is skipped, so a delete-only
-// change passes and deleted paths never mask findings in surviving files.
+// change passes and deleted paths never mask findings in surviving files. A
+// misspelled file looks the same, so every skipped path is listed.
 writeFileSync(join(scratch, 'src/keep.tsx'), 'export const keep = () => <p>ok</p>;\n');
 writeFileSync(join(scratch, 'src/bad.tsx'), "import React from 'react';\n");
 const deleted = ['src/gone.tsx', 'docs/removed.md', '.eslintrc'];
 const deleteOnly = runPaths(scratch, ...deleted);
-if (deleteOnly.status !== 0 || !deleteOnly.stdout.includes('nothing to check')) {
-  fail('expected a delete-only changed-file list to pass with "nothing to check"', deleteOnly);
+if (
+  deleteOnly.status !== 0 ||
+  !deleteOnly.stdout.includes('nothing to check') ||
+  !deleteOnly.stdout.includes(`skipped missing file(s), deleted or misspelled: ${deleted.join(', ')}`)
+) {
+  fail('expected a delete-only changed-file list to pass with "nothing to check" and list the skipped paths', deleteOnly);
 }
 const deletedAndClean = runPaths(scratch, 'src/keep.tsx', ...deleted);
 if (deletedAndClean.status !== 0 || !deletedAndClean.stdout.includes('(1 files scanned)')) {

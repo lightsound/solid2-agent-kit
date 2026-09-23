@@ -781,7 +781,8 @@ function fileFindings(file, relativeTo) {
 // deleted files. A missing path that could only have been a file — it has an
 // extension, or is a dot-name, which walks never descend into — has nothing
 // left to gate. An extensionless or slash-terminated path may have been a
-// directory, and a typo'd source tree must not pass as a clean run.
+// directory, and a typo'd source tree must not pass as a clean run. A typo'd
+// file name looks the same as a deleted one, so skipped paths are listed.
 function namesFile(arg) {
   const name = basename(arg);
   return !/[\\/]$/.test(arg) && (extname(name) !== '' || name.startsWith('.'));
@@ -800,10 +801,14 @@ function check() {
     files = [];
     scanned = pathArgs;
     walked = false;
+    const skipped = [];
     for (const arg of pathArgs) {
       const path = resolve(target, arg);
       if (!existsSync(path)) {
-        if (namesFile(arg)) continue;
+        if (namesFile(arg)) {
+          skipped.push(arg);
+          continue;
+        }
         console.error(
           `solid2-kit check — path not found: ${path} (a path without an extension may name a source directory, so it must exist; drop deleted files from a changed-file list with \`git diff --name-only --diff-filter=d\`)`,
         );
@@ -815,6 +820,9 @@ function check() {
       } else if (SOURCE_FILE.test(path)) {
         files.push(path);
       }
+    }
+    if (skipped.length > 0) {
+      console.log(`solid2-kit check — skipped missing file(s), deleted or misspelled: ${skipped.join(', ')}`);
     }
   } else {
     const srcDir = resolve(target, flagValue('--dir', 'src'));
