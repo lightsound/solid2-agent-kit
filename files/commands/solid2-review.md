@@ -34,6 +34,9 @@ Steps:
      `[ASYNC_STORE_SETTER]`), store setters called at component-body top level, and
      `latest()` used as a null-safe read of an unsettled source;
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;
+   - mutations on a value read through `live()` that settle on `yield save()` alone or
+     `refresh()` the live-derived store, instead of `yield until(predicate, { timeout })`
+     for the stream's echo (the old value flashes back when the overlay drops);
    - rewriting App with loading/error branches, or snapshot/restore, when wrapping
      a client store in server functions; disabling optimistic rows until ack;
    - tRPC / type-gen around `"use server"`, a client `fetch` after a mutation,

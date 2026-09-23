@@ -632,6 +632,38 @@ only the echo can. Timeout rejects with `TimeoutError` (strongly recommended on
 droppable transports; abort via `signal`). Outside actions, `await until(() => user())`
 waits for a value before continuing.
 
+The same hold applies when the mutation *does* answer but the value is read through a
+`live()` source. A live source updates only through its open stream — it takes no part
+in revalidation or single-flight mutation data — so the mutation's response and the
+stream's echo race. Settle on `yield saveBid(...)` alone and the overlay is discarded
+first: the old bid flashes back until the stream catches up.
+
+```tsx
+import { action, createOptimisticStore, until } from 'solid-js';
+import { liveAuction, saveBid } from '../data/auction';
+
+function Auction(props: { id: string }) {
+  const [auction, setAuction] = createOptimisticStore(() => liveAuction(props.id), { highBid: 0 });
+
+  const bid = action(function* (amount: number) {
+    setAuction((a) => { a.highBid = amount; });                    // overlay
+    yield saveBid(props.id, amount);                                 // the write goes up
+    yield until(() => auction.highBid >= amount, { timeout: 10_000 }); // hold for the echo
+  });
+
+  return <button onClick={() => bid(auction.highBid + 1)}>Bid {auction.highBid + 1}</button>;
+}
+```
+
+Do not `refresh(auction)` in place of `until`: on a store derived from a live source it
+re-runs the derivation — the current stream is closed and `liveAuction()` opens a new
+connection. That costs a reconnect per mutation and hides the flash only when the new
+connection's first value already includes the write; when the read side lags the write,
+the old value still flashes back before the echo. Reactive clients whose
+subscriptions already carry the write when the mutation resolves (e.g. Convex) need
+neither. The server side of `liveAuction` / `saveBid` is in
+[Server functions](#server-functions--use-server).
+
 Navigation-shaped updates do **not** need core `action`. A plain setter is enough:
 reads pull the async, and downstream async computeds hold previous values until the
 new ones are ready (`isPending` / `latest`). Reach for `action` from `solid-js` only
@@ -1367,8 +1399,42 @@ export const fetchStory = GET(async (id: number) => {
 });
 ```
 
+A value that changes over time is `live(GET(fn))` — **`live()` outermost**: `GET()`
+chooses the read transport and `live()` wraps the call behavior around it. `live()`
+does not imply `GET()`; without it the source streams over POST, which is fine when a
+cacheable URL is of no use.
+
+```ts
+// src/data/auction.ts
+import { GET, live } from '@solidjs/web/server-functions';
+
+export const liveAuction = live(
+  GET(async function* (id: string) {
+    'use server';
+    yield await db.auctions.find(id); // current state first, from storage
+    for await (const _change of db.auctions.subscribe(id)) {
+      yield await db.auctions.find(id);
+    }
+  }),
+);
+
+export async function saveBid(id: string, amount: number) {
+  'use server';
+  await db.bids.place(id, amount);
+}
+```
+
+A plain `async function*` server function (no `live()`) is a different tool: an
+**event sequence** on one connection, consumed with `for await` and accumulated. When
+that connection drops, the iteration ends with an error and nothing reopens it; ending
+the iteration in the browser aborts the request and fires the server's
+`request.signal`. Use it for an order's status history; use `live()` when each value
+replaces the previous one.
+
 `live()` yields **current state** (each yield replaces the last); do not treat
-it as an append-only event log. Until the first yield it is unsettled
+it as an append-only event log. A reconnect calls the function again and its first
+yield replaces the stale answer, so read that first value from the state mutations write
+to (database, shared server state) — not from generator locals or per-connection memory. Until the first yield it is unsettled
 (`<Loading>`), same as a Promise; later yields are updates — the fallback does
 not return.
 Wire status is a side channel on the **iterable the `live()` call returns**,
@@ -1469,7 +1535,10 @@ how to reuse. Prefer the form on the right.
 | `throw new Error("expired")` from a server function (prod) | `throw markSafeError(...)` or `throw respond(body, { status })` |
 | `const r = await api.x(); if (!r.ok) ...` result-object checks at every read | throw unusable responses; contain each region with `<Errored>` |
 | `GET(async (id) => { "use server"; await db.delete(id) })` | mutations stay on POST; `GET()` is for idempotent reads |
-| `live()` yields as an event log to append | each yield **replaces** the current answer; yield current state first |
+| `live()` yields as an event log to append | each yield **replaces** the current answer; yield current state first, read from the state mutations write to — a reconnect calls the function again, so generator locals or per-connection memory are not the source |
+| `GET(live(async function* () { ... }))` | `live(GET(async function* () { ... }))` — `live()` outermost; `live()` alone streams over POST |
+| a plain `async function*` `"use server"` stream for a value that must survive a dropped connection | `live()` — a plain stream is an event sequence on one connection (`for await`, accumulate); nothing reopens it when it drops |
+| `yield saveBid(...)` then `refresh(auction)` on a store derived from `live()` | `yield saveBid(...); yield until(() => auction.highBid >= amount, { timeout })` — `live()` is outside revalidation/single-flight; `refresh` re-runs the derivation (closes the stream, calls the source again): a reconnect per mutation, and the old value still flashes back whenever the new first value predates the write |
 | `<article innerHTML={html()}>…children…</article>` | `innerHTML` **or** children, not both |
 | `fallback={(error) => <p>{error.message}</p>}` | `error` is an accessor: `error().message` (or `String(error())`) |
 | `import { action } from "solid-js"` on a `<form>` | `import { action } from "@solidjs/router"` + `<form action={save} method="post">` (core `action` is a generator transaction, not a form URL) |
@@ -1726,7 +1795,9 @@ always-applied rules installed alongside this skill.
       setters + `action` + server functions): do not rewrite App with
       loading/error branches, disable optimistic rows until ack, or refetch in
       `hydrate` / `onSettled`. HTTP does not enforce TypeScript — validate
-      inside `"use server"`; do not invent tRPC. `live()` owns the client connection.
+      inside `"use server"`; do not invent tRPC. `live()` owns the client connection,
+      is declared `live(GET(fn))`, and a mutation on a live-read value holds with
+      `yield until(...)` for the echo instead of `refresh()`.
       A server bundle uses `handleRequest` from `dist/server/server.js`; client-only start
       is static `dist/client`. Do not delay `renderToStream` for visual order
       (`<Reveal>` does).
