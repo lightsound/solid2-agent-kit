@@ -285,7 +285,7 @@ gets no warning. The cleanup of an effect is the `apply` return value — `onCle
 inside `apply` has no owner and never runs (`[NO_OWNER_CLEANUP]`).
 
 ```tsx
-// WRONG — returns the assigned string; halts reactivity on the first run
+// WRONG — returns the assigned string; halts reactivity (dev: first run, prod: next run)
 createEffect(() => title(), (t) => (document.title = t));
 
 // CORRECT
