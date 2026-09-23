@@ -242,9 +242,15 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `pending` on the record rather than a second copy of state. Do not snapshot
     and restore, disable optimistic rows until ack, mutex rapid clicks, or freeze
     unrelated writes because one action is in flight; failed-action replay is
-    optional. Fire-and-forget confirmations wait with `yield until(predicate,
-    { timeout })` — the predicate reads authoritative state. Except reactive clients (e.g. Convex) whose subscriptions already push authoritative
-    state after mutations. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
+    optional. Confirmations that arrive on another channel wait with `yield until(predicate,
+    { timeout })` — the predicate reads authoritative state, so the overlay cannot satisfy it.
+    That covers fire-and-forget sends **and** request/response mutations whose result is
+    read through a `live()` source: `live()` takes no part in revalidation or single-flight,
+    so after `yield save()` alone the overlay drops before the stream echoes the write and
+    the old value flashes back. Follow it with `yield until(...)`, not `refresh(liveStore)`
+    (that re-runs the derivation — the current stream closes and the source is called
+    again — and the flash remains). Skip `until` only for reactive clients (e.g. Convex)
+    whose subscriptions already carry the write when the mutation resolves. Compiler: `"jsxImportSource": "@solidjs/web"` (not `"solid-js"`);
     Vite plugin is `@solidjs/vite-plugin` (not `vite-plugin-solid`) — run `solid2-kit doctor`
     after touching `package.json` / tsconfig / root configs; it fails on React and Solid 1.x
     wiring. Server vs browser:
@@ -346,7 +352,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     components from `"use server"` unless the project already enabled the
     experimental `serverFunctions.components` flag. JSON-encodable server-function arguments
     only, unless `enableRichArguments()` was called once in the client entry
-    (`Date` / `Map` / `Set` throw without it). `live()` connection state is
+    (`Date` / `Map` / `Set` throw without it). Declare live reads as `live(GET(fn))` —
+    `live()` outermost. A plain `async function*` server function is an event stream on
+    one connection (no reconnect when it drops); `live()` is one value that changes over
+    time and reconnects. `live()` connection state is
     `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`), never a
     field in the yielded value. Sibling `<Loading>` reveal order is `<Reveal>`
     (`collapsed` suppresses tail skeletons under sequential order).
