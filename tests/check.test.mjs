@@ -132,8 +132,7 @@ if (dirClean.status !== 0 || !dirClean.stdout.includes(`(${cleanCount} files sca
   fail(`expected \`check clean\` (directory argument) to pass with ${cleanCount} files scanned`, dirClean);
 }
 
-// A walk that finds no sources must not pass, and a missing path that may
-// name a directory (no extension, or a trailing slash) is an error.
+// A walk that finds no sources must not pass, and a missing path is an error.
 // node_modules and dot-directories are never walked. Named files with no
 // sources among them (a docs-only changed-file list) pass with nothing to check.
 const scratch = mkdtempSync(join(tmpdir(), 'solid2-kit-check-'));
@@ -156,40 +155,60 @@ const docsOnly = runPaths(scratch, 'src/notes.md');
 if (docsOnly.status !== 0 || !docsOnly.stdout.includes('nothing to check')) {
   fail('expected named non-source files only to pass with "nothing to check"', docsOnly);
 }
+
+// A deleted file, a misspelled file, and a renamed directory are
+// indistinguishable to check, so every missing path exits 2 and points at
+// --diff-filter=d, even next to existing files.
+writeFileSync(join(scratch, 'src/keep.tsx'), 'export const keep = () => <p>ok</p>;\n');
 for (const [label, result] of [
   ['an extensionless path (typo\'d directory)', runPaths(scratch, 'does-not-exist')],
   ['a slash-terminated path', runPaths(scratch, 'lib.old/')],
-  ['a typo\'d directory next to deleted files', runPaths(scratch, 'srcc', 'src/gone.tsx', 'README.md')],
+  ['a dotted directory name', runPaths(scratch, 'src/routes.nwe')],
+  ['a deleted or misspelled source file', runPaths(scratch, 'src/gone.tsx')],
+  ['a deleted non-source file', runPaths(scratch, 'docs/removed.md')],
+  ['a deleted dot-name', runPaths(scratch, '.eslintrc')],
+  ['a deleted file next to an existing source', runPaths(scratch, 'src/keep.tsx', 'src/gone.tsx')],
 ]) {
-  if (result.status !== 2 || !result.stderr.includes('path not found')) {
-    fail(`expected ${label} that does not exist to exit 2 with "path not found"`, result);
+  if (result.status !== 2 || !result.stderr.includes('path not found') || !result.stderr.includes('--diff-filter=d')) {
+    fail(`expected ${label} that does not exist to exit 2 with "path not found" and the --diff-filter=d hint`, result);
   }
 }
 
-// `git diff --name-only | xargs solid2-kit check` names deleted files: a
-// missing path with an extension (or a dot-name) is skipped, so a delete-only
-// change passes and deleted paths never mask findings in surviving files. A
-// misspelled file looks the same, so every skipped path is listed.
-writeFileSync(join(scratch, 'src/keep.tsx'), 'export const keep = () => <p>ok</p>;\n');
-writeFileSync(join(scratch, 'src/bad.tsx'), "import React from 'react';\n");
-const deleted = ['src/gone.tsx', 'docs/removed.md', '.eslintrc'];
-const deleteOnly = runPaths(scratch, ...deleted);
-if (
-  deleteOnly.status !== 0 ||
-  !deleteOnly.stdout.includes('nothing to check') ||
-  !deleteOnly.stdout.includes(`skipped missing file(s), deleted or misspelled: ${deleted.join(', ')}`)
-) {
-  fail('expected a delete-only changed-file list to pass with "nothing to check" and list the skipped paths', deleteOnly);
+// The documented pipeline, `git diff --name-only -z --diff-filter=d main |
+// xargs -0 -r solid2-kit check`: deleted files never reach check, surviving
+// files are still gated, and a delete-only change leaves nothing to run.
+const repo = mkdtempSync(join(tmpdir(), 'solid2-kit-check-git-'));
+process.on('exit', () => rmSync(repo, { recursive: true, force: true }));
+const git = (...gitArgs) => {
+  const result = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...gitArgs], { cwd: repo, encoding: 'utf8' });
+  if (result.status !== 0) fail(`git ${gitArgs.join(' ')} failed`, result);
+  return result.stdout;
+};
+const changed = () => git('diff', '--name-only', '-z', '--diff-filter=d', 'main').split('\0').filter(Boolean);
+mkdirSync(join(repo, 'src'));
+mkdirSync(join(repo, 'docs'));
+writeFileSync(join(repo, 'src/keep.tsx'), 'export const keep = () => <p>ok</p>;\n');
+writeFileSync(join(repo, 'src/gone.tsx'), 'export const gone = () => <p>gone</p>;\n');
+writeFileSync(join(repo, 'docs/removed.md'), '# removed\n');
+writeFileSync(join(repo, '.eslintrc'), '{}\n');
+git('init', '-q', '-b', 'main');
+git('add', '.');
+git('commit', '-q', '-m', 'base');
+git('rm', '-q', 'src/gone.tsx', 'docs/removed.md', '.eslintrc');
+if (changed().length !== 0) fail('expected a delete-only change to leave --diff-filter=d with no paths', { stdout: changed().join('\n') });
+writeFileSync(join(repo, 'src/keep.tsx'), 'export const keep = () => <p>still ok</p>;\n');
+writeFileSync(join(repo, 'src/my page.tsx'), "import React from 'react';\n");
+git('add', '.');
+const pipeline = runPaths(repo, ...changed());
+if (pipeline.status !== 1 || !pipeline.stderr.includes('[react-import]') || !pipeline.stderr.includes('my page.tsx')) {
+  fail('expected the --diff-filter=d pipeline to gate the surviving files (including a path with a space)', pipeline);
 }
-const deletedAndClean = runPaths(scratch, 'src/keep.tsx', ...deleted);
-if (deletedAndClean.status !== 0 || !deletedAndClean.stdout.includes('(1 files scanned)')) {
-  fail('expected deleted files next to a clean survivor to pass with 1 file scanned', deletedAndClean);
-}
-const deletedAndBad = runPaths(scratch, 'src/bad.tsx', ...deleted);
-if (deletedAndBad.status !== 1 || !deletedAndBad.stderr.includes('[react-import]')) {
-  fail('expected deleted files next to a violating survivor to still fail with findings', deletedAndBad);
+const unfiltered = git('diff', '--name-only', '-z', 'main').split('\0').filter(Boolean);
+const unfilteredRun = runPaths(repo, ...unfiltered);
+if (unfilteredRun.status !== 2 || !unfilteredRun.stderr.includes('--diff-filter=d')) {
+  fail('expected a changed-file list with deleted files to exit 2 and point at --diff-filter=d', unfilteredRun);
 }
 
 console.log(
-  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; file mode gated a single file; directory arguments walked; 0-file walks and missing directory-like paths fail; docs- and delete-only file lists pass)`,
+  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; file mode gated a single file; directory arguments walked; 0-file walks and every missing path fail; docs-only file lists pass; --diff-filter=d pipeline gates survivors)`,
 );

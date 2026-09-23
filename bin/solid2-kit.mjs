@@ -22,7 +22,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -777,18 +777,6 @@ function fileFindings(file, relativeTo) {
   return findings;
 }
 
-// Changed-file lists (`git diff --name-only | xargs solid2-kit check`) name
-// deleted files. A missing path shaped like a file — it has an extension, or
-// is a dot-name, which walks never descend into — is taken as deleted and has
-// nothing left to gate. An extensionless or slash-terminated path may have
-// been a directory, and a typo'd source tree must not pass as a clean run.
-// Neither a misspelled file nor a missing dotted directory (`routes.v2`) can
-// be told apart from a deletion here, so skipped paths are listed.
-function namesFile(arg) {
-  const name = basename(arg);
-  return !/[\\/]$/.test(arg) && (extname(name) !== '' || name.startsWith('.'));
-}
-
 function check() {
   const target = resolve(flagValue('--target', '.'));
   const pathArgs = positionalArgs();
@@ -802,16 +790,14 @@ function check() {
     files = [];
     scanned = pathArgs;
     walked = false;
-    const skipped = [];
+    // A missing path is always an error: a deleted file, a misspelled file, and
+    // a renamed source directory look the same here, and only the list's
+    // producer knows which it was.
     for (const arg of pathArgs) {
       const path = resolve(target, arg);
       if (!existsSync(path)) {
-        if (namesFile(arg)) {
-          skipped.push(arg);
-          continue;
-        }
         console.error(
-          `solid2-kit check — path not found: ${path} (a path without an extension may name a source directory, so it must exist; drop deleted files from a changed-file list with \`git diff --name-only --diff-filter=d\`)`,
+          `solid2-kit check — path not found: ${path} (drop deleted files from a changed-file list with \`git diff --name-only --diff-filter=d\`)`,
         );
         process.exit(2);
       }
@@ -821,9 +807,6 @@ function check() {
       } else if (SOURCE_FILE.test(path)) {
         files.push(path);
       }
-    }
-    if (skipped.length > 0) {
-      console.log(`solid2-kit check — skipped missing file(s), deleted or misspelled: ${skipped.join(', ')}`);
     }
   } else {
     const srcDir = resolve(target, flagValue('--dir', 'src'));
@@ -837,8 +820,8 @@ function check() {
 
   // A walk that found no sources points at the wrong tree; passing it would
   // read as a clean gate in CI and in agent loops. A list of named files with
-  // no sources among them (changed-file pipelines on a docs- or delete-only
-  // change) has nothing to gate and passes.
+  // no sources among them (changed-file pipelines on a docs-only change) has
+  // nothing to gate and passes.
   if (files.length === 0 && !walked) {
     console.log('solid2-kit check — OK (no .ts/.tsx/.jsx sources among the named files; nothing to check).');
     return;
