@@ -75,7 +75,14 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     fed to `<For>` (that rebuilds the window array every time).
 8. **Effects have two phases**: `createEffect(compute, apply)`. All reactive reads go in
     `compute`; its return value feeds `apply`, which does imperative work and may return a
-    cleanup. Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
+    cleanup. `apply` returns a cleanup function or nothing — **write it with a block body**:
+    `(t) => { document.title = t; }`, never `(t) => (document.title = t)` or
+    `(v) => setX(v)` (an assignment or setter returns its value; dev throws
+    `invalid cleanup value`, production fails on the next run, and either halts the whole
+    reactive system). An `apply` that only calls a local setter is still rule 4 with a
+    block body — make it a derivation. Register an effect's cleanup by returning it
+    from `apply` — `onCleanup` there never runs (`[NO_OWNER_CLEANUP]`).
+    Single-argument `createEffect(fn)` is an error in Solid 2. Do not substitute
     `createTrackedEffect` for that — it is an advanced one-callback form that cannot nest
     primitives. Skip the initial run with `{ defer: true }`. Most React `useEffect` code should not become an effect at all — see the skill.
 9. **Stores update by mutating a draft**: `setStore(draft => { draft.user.name = "Ada" })`.
@@ -86,6 +93,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
    `reconcile` or the derived form (dev + attribution flags the store-level waste as
    `[IMMUTABLE_UPDATE_IN_STORE]`). Stores are
    **property reads** (`todos.length`, `todo.title`), not accessors — never `todos()`.
+   The store itself is read-only: `todos.push(x)`, `state.count++`, or
+   `todo.done = !todo.done` outside a setter is **silently ignored** (no throw, no
+   warning, and TypeScript accepts it) — every write goes through the setter's draft.
+   `Map`, `Set`, and `Date` are stored as-is, not proxied: `draft.selected.add(id)`
+   changes the object but notifies nobody. Model sets as `Record<id, true>` (or an
+   array), or assign a new instance in the setter (`draft.tags = new Set([...draft.tags, t])`).
    The setter callback is a **synchronous** transaction: `setStore(async (draft) => …)`
    throws `[ASYNC_STORE_SETTER]` in dev (writes after the first `await` were silently
    lost before). `await` first, then call the setter (inside an `action`, `yield` first).
@@ -143,9 +156,16 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `createContext<T>()` without a default throws when read outside a provider (good) — use
     that for any reactive payload. `createContext("light")` is only for a primitive static
     fallback; a dummy default on a store/signal context *runs* and then silently no-ops
-    without a provider. Truly app-wide singletons (theme, session, locale) are a
-    **module-level** signal/store — Context is subtree scoping, not a React-style
-    app store. Module state is shared across SSR requests.
+    without a provider. **Shared state lives in a provider, including app-wide state**
+    (theme, session, cart, locale): a factory such as `createCart()` called by a provider
+    component placed at the root of `App`, read through `createContext<T>()` (no default)
+    and a `useCart()` hook. Module scope is for constants and the `createContext` call itself —
+    never `export const [session, setSession] = createStore(...)`. Module state has no
+    owner, and under `ssr: true` one module instance serves every request, so one
+    visitor's state renders into another's HTML (`[SERVER_WRITE]`); a module-level
+    store derived from a server function throws `Cannot call server function outside
+    of a request` at import. A client-only build happens to work, until the day SSR is
+    turned on.
 12. Refs: `let el!: HTMLDivElement` + `ref={el}` or `ref={(node) => (el = node)}`, or forward
     `props.ref`. Compose with arrays: `ref={[props.ref, (node) => (el = node)]}`. No
     `useRef`/`.current`. Ref callbacks run untracked and **without an owner**; their
@@ -155,12 +175,18 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `onSettled(() => { ...; return cleanup })` — `onCleanup` is for custom
     primitives and captured owners, not component bodies. Each `onSettled`
     registers a **single** fire (reads inside are untracked); ongoing
-    imperative work is `createEffect`.
+    imperative work is `createEffect`, created in the component body — not inside
+    the callback. The `onSettled` callback is a restricted scope: `onCleanup`
+    (`[CLEANUP_IN_FORBIDDEN_SCOPE]`), creating a memo or effect
+    (`[PRIMITIVE_IN_FORBIDDEN_SCOPE]`), and `flush()` all throw there in dev and halt
+    the reactive system. A 1.x `onMount(() => { …; onCleanup(…) })` becomes
+    `onSettled(() => { const id = setInterval(tick, 1000); return () => clearInterval(id); })`.
 13. **Writes are staged** and commit on the next microtask. Event handlers need nothing
     special; tests and imperative integration code must call `flush()` before observing
     updated *synchronous* state or DOM. Waiting on an async memo is
     `await resolve(() => value())` (or Testing Library async queries), not `flush()`.
-    Never call `flush()` inside an `action`.
+    Never call `flush()` inside an `action`, an `onSettled` callback (throws in dev), or an
+    effect callback (a no-op, `[FLUSH_IN_EFFECT_CALLBACK]`).
 14. Do not port these React tools — they have no Solid equivalent because the problems they
     solve don't exist: `useCallback`, `React.memo`, `forwardRef`, `useSyncExternalStore`,
     dependency arrays, `startTransition`/`useTransition` (updates are held and coordinated
@@ -190,8 +216,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     by `<Errored>`; speculative value = `latest()`. `<Errored>` is graph status, not a
     terminal React ErrorBoundary: it heals when the source succeeds again (refresh,
     live reconnect, input change). `reset` retries the collected *sources*, not a UI
-    remount. Per-row mutation failures belong in an errors map the projection folds
-    in (survives the optimistic overlay), not in `<Errored>` around the whole list.
+    remount. `<Errored>` catches failing *reads* and renders, never a mutation: an
+    error that escapes an `action` discards its optimistic writes and rejects the
+    promise the call returned — no boundary sees it, and uncaught it is an unhandled
+    rejection with the UI silently reverted. Catch expected failures inside the action
+    (per-row: an errors map the projection folds in, which survives the optimistic
+    overlay; otherwise a toast), and `.catch` the call in the handler for the rest.
     Error monitoring is a hook, not a side effect in the fallback: the boundary-caught
     failures no global handler sees reach `configureClientErrors({ onError })` from
     `solid-js` (or `render(..., { onError })` per root) and `configureServerErrors({ onError })`
@@ -200,7 +230,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     nothing or a reference id, never the error itself (message/stack/secrets would
     reach the browser).
     Making a client store "real" is additive: same setters, wrap mutations in
-    `action`, swap `createOptimisticStore` and a file of server functions — do
+    `action`, swap in the **function form** `createOptimisticStore(() => api.list(), [])`
+    (with `refresh` after the `yield`) and a file of server functions — do
     not rewrite `App.tsx` with loading/error branches.
     No request counters or `AbortController`s for dedup/cancellation — superseded
     answers drop automatically. Throw unusable responses; never `{ success: false }`
@@ -233,7 +264,12 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `postMessage` / logs via `snapshot(store)` (proxies fail or leak reactivity); render
     modals/tooltips/overlays through `<Portal>` from `@solidjs/web`; mutations whose writes
     cross an async gap default to `action` + `createOptimistic`/`createOptimisticStore` —
-    the sync mutation *is* the prediction (an overlay, discarded on settle); write the
+    the sync mutation *is* the prediction (an overlay, discarded on settle). Durable data
+    therefore lives in the function form (`createOptimisticStore(() => api.list(), [])`,
+    or one that reads a separate `createStore`); the value form
+    `createOptimisticStore([])` / `createOptimistic(false)` is a pure overlay with no
+    durable layer — action writes vanish on settle (a saved row disappears) and writes
+    outside an action do not stick — so use it only for in-flight flags. Write the
     body as a generator (`function*` / `async function*`) suspending on `yield`, never a
     plain `async` function (`solid2-kit check` flags that). After a bare `await`, put a
     bare `yield` before the next write **and** before anything that creates a reader
@@ -309,15 +345,25 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `revalidate(getUser.key)`. Do not wrap mutations in `query` (an undeclared server
     function becomes GET). `Router.paths` is not the current location (`useLocation` /
     `useParams`); search params via `useSearchParams` (merging setter; typed with a route
-    `search` schema + path node). A route `preload` result is `props.data`. One router instance —
+    `search` schema + path node). A route `preload` *starts* reads and returns nothing —
+    `preload: ({ params }) => void getProduct(params.id)` (wrap the route in `defineRoute`
+    to type `params`) — and the page reads the same query in a memo:
+    `createMemo(() => getProduct(props.params.id))`. `props.data` is whatever `preload`
+    returned when the route first matched: it does not follow param changes (and an async
+    `preload` makes it a Promise), so return a value only for data that stays fixed while
+    the route is matched. One router instance —
     Solid Router does not support nested `<Router>` / nested `createRouter`.
     In-app navigation is `useNavigate` or `<a href={Router.paths...}>`, not
     `window.location` / `history.pushState`. Link state is automatic
     (`aria-current` / `data-active` / `data-pending` + CSS; `useLinkState` /
     `useIsRouting` in JSX) — never hand-rolled `location.pathname` comparisons. Trusted identity is
-    `getRequestEvent()`, never a caller-supplied user id. Unscripted forms use
-    the function `.url` (or a router `action`), not a hand-built `/_server/`
-    path. Client history adapters do not select the SSR URL — pass
+    `getRequestEvent()`, never a caller-supplied user id. Unscripted (no-JS) POST
+    forms use a router `action` over a `(form: FormData)` server function (the post
+    arrives as one `FormData`; other signatures make `action={save}` TS2322) —
+    `<form action={save} method="post">` — not the
+    function's `.url` and not a hand-built `/_server/` path: a bare `"use server"`
+    function has no typed `.url` (TS2339). `.url` is typed only on `GET()` / `live()`
+    references, for `method="get"` search forms. Client history adapters do not select the SSR URL — pass
     `<Router url={request.url}>` (or rely on the request event). Secrets belong in
     `virtual:env/server`, never the `client` env map / `import.meta.env`. Document head is
     `<Title>` / `<Meta>` from `@solidjs/meta` with **no** `MetaProvider`. A static
@@ -330,8 +376,15 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     fallback printing `err().message` shows `"Internal Server Error"` in a production
     server render) — so intentional client-facing failures are `markSafeError(...)` or
     `throw respond(body, { status })`. Reads are function calls too (`await getUser(id)`
-    on a `GET()`-declared read; the method mirrors the operation). Return or throw a
-    redirect (`if (!session?.userId) throw redirect("/sign-in")`); `redirect()` /
+    on a `GET()`-declared read; the method mirrors the operation). `redirect()` /
+    `reload()` are signals for an integration: Solid Router's `action` / `query` and the
+    no-JS form post apply them. A direct caller — a core `action`, a handler, a plain
+    memo — never gets your data: it receives the raw `Response` as the resolved value
+    (typed as your data, no navigation); only when a mounted router's single-flight
+    hook intercepts a direct POST call does it navigate, and the call then resolves to
+    `null`. So guards `throw redirect("/sign-in")` only when router `action` /
+    `query` call the function; without the router, `throw respond(null, { status: 401 })`
+    (the call rejects) or return a value and navigate in the caller. `redirect()` /
     `respond()` take `revalidate` like `reload()`. Cache GET reads with
     `Cache-Control` on that response (the default is `no-store`), not a hand-rolled
     Solid cache. HTTP does not enforce TypeScript —
@@ -395,7 +448,7 @@ directory (default `src/`).
 | `import type { JSX } from "solid-js"` / `JSX.Element` as the children type | `solid-js` exports no `JSX` namespace: children/returns are `Element` from `"solid-js"`; DOM-specific `JSX` types (`JSX.IntrinsicElements`, `JSX.CSSProperties`) from `"@solidjs/web"` |
 | `createResource` | async `createMemo` + `<Loading>`/`<Errored>`; `refresh()`, `latest()`, `isPending()` |
 | `createEffect(fn)` (one arg), `on(...)` | `createEffect(compute, apply)`; deps belong in `compute` |
-| `onMount` | `onSettled` (return cleanup from its callback) |
+| `onMount` | `onSettled(() => { ...; return cleanup })` — return the cleanup; `onCleanup`, memo/effect creation, and `flush()` throw inside the callback |
 | `batch(...)` | delete it — writes auto-batch; `flush()` only to observe synchronously |
 | `<Suspense>`, `<ErrorBoundary>`, `<SuspenseList>` | `<Loading>`, `<Errored>` (fallback gets an error *accessor*), `<Reveal>` |
 | `<Index>` | `<For keyed={false}>` |
@@ -403,7 +456,7 @@ directory (default `src/`).
 | `setState("a", "b", value)` path setters, `produce(...)` | draft setter: `setState(draft => { ... })` |
 | `mergeProps` / `splitProps` / `unwrap` | `merge` / `omit` / `snapshot` |
 | `classList={...}` | `class` object/array form |
-| `createMutable`, `modifyMutable` | `createStore` + draft setters |
+| `createMutable`, `modifyMutable` | `createStore` + draft setters (direct writes to the store are silently ignored) |
 | `createComputed`, `createSelector`, `createDeferred` | `createMemo`, `createProjection`, external scheduling |
 | `startTransition`, `useTransition` | automatic held updates + `isPending` |
 | `onError` / `catchError` | `<Errored>` or effect bundle `{ effect, error }` |

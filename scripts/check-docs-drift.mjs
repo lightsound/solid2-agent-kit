@@ -87,6 +87,8 @@ const REQUIRED_APIS = [
   'revalidate',
   'useAction',
   'useSubmissions',
+  'defineRoute',
+  'RouteProps',
   'fileRoutes',
   'HydrationScript',
   // diagnostics (dev builds only)
@@ -115,7 +117,7 @@ const BANNED_CREATE = new Set([
 
 // User-defined custom primitives that appear in kit examples (idiomatically
 // named create*) but are not Solid APIs.
-const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo', 'createTodos', 'createMessages']);
+const EXAMPLE_CREATE = new Set(['createSubscriptionQuery', 'createTodo', 'createTodos', 'createMessages', 'createCart']);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

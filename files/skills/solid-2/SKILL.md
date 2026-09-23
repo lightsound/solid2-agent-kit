@@ -41,7 +41,8 @@ Practical consequences:
 | Expensive derivation, multiple consumers, or equality boundary needed | `createMemo(() => ...)` |
 | Follows a prop but user can locally override; prop change resets | writable derivation: `createSignal(() => props.value)` / `createStore(() => props.value, fallback)` |
 | Shared by a subtree, independent per provider instance | signal/store created inside a provider component, passed via context |
-| Truly app-wide singleton (theme, session, locale) | module-level signal/store (beware SSR: module state is shared across requests) |
+| App-wide state (theme, session, cart, locale) | the same provider, placed at the root of `App` — not a module-level signal/store (under SSR one module instance serves every request) |
+| Constants (a category list, a formatter, the `createContext` call) | module scope |
 | Tentative value during a mutation | `createOptimistic` / `createOptimisticStore` + `action` |
 | Values pushed by an external subscription (websocket, reactive client) | async iterable returned from a memo (or function-form `createStore` for keyed reconciliation) — never `{ data, error }` signal pairs |
 
@@ -158,6 +159,32 @@ at component-body top level is a write in an owned scope — dev throws
 `[REACTIVE_WRITE_IN_OWNED_SCOPE]` (rc.9 closed the exemption store writes had) — so
 seed the shape through the `createStore` argument or a derivation.
 
+**The store itself is read-only; only the draft writes.** An assignment or mutating
+call on the store proxy outside a setter is *ignored* — no throw, no dev warning, the
+value does not change, and TypeScript accepts it (`Store<T>` is `T`). This is the
+MobX / Vue / Solid 1 `createMutable` reflex:
+
+```tsx
+// WRONG — all silently ignored
+todos.push(todo);
+state.count++;
+todo.done = !todo.done;
+
+// CORRECT
+setTodos((draft) => { draft.push(todo); });
+setState((draft) => { draft.count++; });
+setTodos((draft) => {
+  const row = draft.find((t) => t.id === id);
+  if (row) row.done = !row.done;
+});
+```
+
+Plain objects and arrays are proxied; `Map`, `Set`, and `Date` are stored as they are.
+`draft.selected.add(id)` inside a setter mutates the `Set` but notifies nobody. Keep a
+set of ids as `Record<string, true>` (`draft.selected[id] = true` /
+`delete draft.selected[id]`, both tracked) or an array, or assign a new instance
+(`draft.tags = new Set([...draft.tags, tag])`) so the property itself changes.
+
 **External collections enter stores through reconciliation, never wholesale assignment.**
 `draft.todos = serverTodos` renders correctly but replaces every object identity — all
 subscribers under the path re-run and row identity is lost. In order of preference:
@@ -246,6 +273,25 @@ createEffect(
     return () => connection.close(); // cleanup before next run / on disposal
   },
 );
+```
+
+`apply` returns a cleanup function or nothing — write it with a **block body**. An
+expression-bodied arrow returns whatever the expression evaluates to: an assignment
+(`(t) => (document.title = t)`) returns the string, and a setter (`(v) => setDraft(v)`)
+returns the value it set. Dev throws `effect callback returned an invalid cleanup value`,
+production throws a `TypeError` on the next run, and both halt the whole
+reactive system (`[REACTIVITY_HALTED]`). TypeScript reports it as TS2345; a JS project
+gets no warning. The cleanup of an effect is the `apply` return value — `onCleanup`
+inside `apply` has no owner and never runs (`[NO_OWNER_CLEANUP]`).
+
+```tsx
+// WRONG — returns the assigned string; halts reactivity (dev: first run, prod: next run)
+createEffect(() => title(), (t) => (document.title = t));
+
+// CORRECT
+createEffect(() => title(), (t) => {
+  document.title = t;
+});
 ```
 
 Reads inside `apply` do not track. Extract every needed reactive value in `compute`
@@ -572,12 +618,28 @@ function createTodos() { // call from a component — not module scope (SSR shar
 Three layers, in this order: durable source → ephemeral UI that must survive
 overlay discard (the `errors` map, folded in the projection) → optimistic overlay
 (`pending`, the predicted `completed`). Consumers read one store. Catch
-*expected* mutation failures in the action so a toggle error does not blank the
-list through `<Errored>`; unhandled projection/render errors still reach the
-boundary.
+*expected* mutation failures in the action, because nothing else will show them:
+an error that escapes an action discards its optimistic writes and rejects the
+promise the call returned — it never reaches `<Errored>`, which catches failing
+reads and renders only (projection and render errors still reach the boundary).
+Uncaught, the UI silently reverts and the rejection is unhandled. Put expected
+failures in the errors map or a toast inside the action, and `.catch` the call in
+the handler for the rest:
+
+```tsx
+<button
+  type="button"
+  onClick={() => {
+    removeTodo(todo.id).catch(() => showToast('Could not delete'));
+  }}
+>
+  Delete
+</button>
+```
 
 Going from a client store to the server is **additive**: same `setTodos`
-calls, wrap each mutation in `action`, swap in `createOptimisticStore` and a
+calls, wrap each mutation in `action`, swap in the **function form**
+`createOptimisticStore(() => api.list(), [])` (with `refresh` after the `yield`) and a
 file of server functions. Do not rewrite `App.tsx` with loading/error branches,
 and do not snapshot-the-cache / write-a-prediction / restore-on-error. A cache
 library is not the productionizing step — the sync mutation already was the
@@ -593,6 +655,16 @@ Ordinary signal/store writes inside an action are held until it settles. Never c
 `flush()` inside an action. Invoke actions from handlers, not from component/computation bodies.
 Do not set a `submitted` signal and watch it from an effect — that work belongs in the
 handler or the `action`.
+
+**The value form has no durable layer.** `createOptimisticStore([])` (or
+`createOptimistic(value)`) is a pure overlay: writes inside an action vanish when it
+settles, and writes outside an action do not stick. Copying the reference example
+`createOptimisticStore<Todo[]>([])` and writing the saved row after the `yield`
+leaves an empty list once the action settles, with no warning. Durable data comes
+from the function form — `createOptimisticStore(() => api.list(), [])` refreshed
+after the `yield`, or `createOptimisticStore(() => base.todos, [])` over a separate
+`createStore` that the action writes the confirmed value into. Keep the value form for
+in-flight flags.
 
 `createOptimistic` / `createOptimisticStore` are for a tentative value during an
 active mutation, not a local editing session (use a writable derivation or a plain
@@ -772,9 +844,47 @@ function ThemeButton() {
 
 Pass accessors/setters/stores through context — never `value={theme()}` (a dead snapshot).
 No `useMemo` for the value object, no context splitting: the object is created once and
-fine-grained updates flow through the signals inside it. Context is **subtree scoping**.
-A true app-wide singleton (theme, session, locale) is a module-level signal/store —
-do not invent a root provider for that. Module state is shared across SSR requests.
+fine-grained updates flow through the signals inside it.
+
+**App-wide state is the same provider, placed at the root of `App`** — not a
+module-level signal or store. Module scope is for constants and the `createContext`
+call itself:
+
+```tsx
+import { createContext, createStore, useContext, type ParentProps } from 'solid-js';
+
+type CartItem = { id: string; quantity: number };
+
+// WRONG under SSR — one store for every request the server ever handles
+// export const [cart, setCart] = createStore({ items: [] as CartItem[] });
+
+// CORRECT — one store per provider instance: per tab in the browser, per request on the server
+function createCart() {
+  const [cart, setCart] = createStore({ items: [] as CartItem[] });
+  return { cart, setCart };
+}
+
+const CartContext = createContext<ReturnType<typeof createCart>>();
+
+export function CartProvider(props: ParentProps) {
+  return <CartContext value={createCart()}>{props.children}</CartContext>;
+}
+
+export function useCart() {
+  return useContext(CartContext); // throws ContextNotFoundError outside CartProvider
+}
+
+// App: <CartProvider><ThemeProvider>{/* router / pages */}</ThemeProvider></CartProvider>
+```
+
+Module state has no owner (nothing disposes it), and under `ssr: true` the server
+loads the module once and serves every request from it: `createStore(value)` on the
+server is the plain object, so one visitor's writes render into the next visitor's
+HTML (`[SERVER_WRITE]`). A module-level store derived from a server function fails
+sooner — `Cannot call server function outside of a request` while the module loads.
+In a client-only build a module-level store is one per tab and works, which is why it
+looks fine until `ssr: true` is turned on; the provider costs nothing extra and
+survives that change.
 
 ### Refs
 
@@ -814,6 +924,32 @@ do not `return () => cleanup`. Put owned setup in a **directive factory** (like
 `listen` above) and return only the element callback. Use this for
 `ResizeObserver`, third-party widgets, and native listener options (`capture` /
 `passive`) — Solid event props do not take those options.
+
+### `onSettled` — one-time setup, restricted scope
+
+`onSettled` is the `onMount` replacement, and its callback is a **restricted scope**:
+`onCleanup` throws there (`[CLEANUP_IN_FORBIDDEN_SCOPE]`), creating a memo or effect
+throws (`[PRIMITIVE_IN_FORBIDDEN_SCOPE]`), and so does `flush()` — each halts the
+reactive system in dev. Return the cleanup; create effects and memos in the component
+body, next to the `onSettled` call, not inside it.
+
+```tsx
+// WRONG — the mechanical 1.x port of onMount + onCleanup
+onSettled(() => {
+  const id = setInterval(tick, 1000);
+  onCleanup(() => clearInterval(id));
+});
+
+// CORRECT
+onSettled(() => {
+  const id = setInterval(tick, 1000);
+  return () => clearInterval(id);
+});
+```
+
+Effect callbacks follow the same shape: return the cleanup from `apply` (an
+`onCleanup` there never runs), and `flush()` inside one is a no-op
+(`[FLUSH_IN_EFFECT_CALLBACK]`).
 
 ### Per-value SSR policy: `ssrSource`
 
@@ -1200,8 +1336,57 @@ plain `<a href={Router.paths.about}>` (or `useNavigate`); there is no `<A>` /
 `<Navigate>` / `<HashRouter>` / `<FileRoutes />`. Do not assign
 `window.location.href` or call `history.pushState` for in-app navigation.
 Session location is `useLocation` / `useParams`,
-not `Router.paths`. A route `preload` result is `props.data` on the matched
-component (and the factory `preload` result is the root render prop's `props.data`).
+not `Router.paths`.
+
+**Route `preload` starts reads; the page reads them in a memo.** `preload` runs when
+the route matches (and on link hover), so it should kick off the query and return
+nothing; the component reads the same query through a memo that tracks the params:
+
+```tsx
+// src/data/products.ts
+import { query } from '@solidjs/router';
+
+export const getProduct = query(async (id: string) => {
+  const response = await fetch(`/api/products/${id}`);
+  return (await response.json()) as Product;
+}, 'product');
+
+// src/router.ts — defineRoute types params from the path (params.id: string)
+import { lazy } from 'solid-js';
+import { createRouter, defineRoute } from '@solidjs/router';
+import { getProduct } from './data/products';
+
+export const Router = createRouter({
+  routes: [
+    defineRoute({
+      path: '/products/:id',
+      preload: ({ params }) => void getProduct(params.id),
+      component: lazy(() => import('./pages/Product')),
+    }),
+  ],
+});
+
+// src/pages/Product.tsx
+import { createMemo } from 'solid-js';
+import type { RouteProps } from '@solidjs/router';
+import { getProduct } from '../data/products';
+
+export default function ProductPage(props: RouteProps<'/products/:id'>) {
+  const product = createMemo(() => getProduct(props.params.id));
+  return <h1>{product().name}</h1>;
+}
+```
+
+Do not return the data from `preload` and render `props.data` (the Remix-loader
+shape): `props.data` is whatever `preload` returned when the route first matched, so
+navigating `/products/mug` → `/products/bowl` keeps showing the mug, and an `async`
+preload makes it a Promise (`props.data.name` is TS2339). Return a value only for
+data that stays fixed while the route is matched. The factory `preload` on
+`createRouter` runs once per mount/request; its result is the root render prop's
+`props.data`. Plain route objects type `params` as an open record (`string |
+undefined` per key) — wrap a route in `defineRoute` when `preload` or the component
+needs `params.id: string`.
+
 Link warming: `preload="false"` skips that link's *data* preload; `preloadLinks: false`
 disables automatic link preloading. Intent values are `"initial"` / `"navigate"` /
 `"native"` / `"preload"`. One router per app.
@@ -1358,8 +1543,42 @@ reference runs in-process (no HTTP); in the browser it is HTTP. Anything
 referenced only inside the `"use server"` body (db client, secrets) never
 reaches the client — the directive is the privacy boundary. Mutations that should
 revalidate: `redirect` / `reload` from `@solidjs/web` (see the server-function
-guides). Return or throw a redirect — guards read `if (!session?.userId) throw
-redirect("/sign-in")`. `redirect()` and `respond()` accept the same `revalidate`
+guides).
+
+**`redirect()` / `reload()` are signals for an integration, not navigation.** Solid
+Router's `action` / `query` apply them (navigate, revalidate), and a no-JS form post
+follows the 302. Any other caller — a core `action`, an event handler, a plain
+`createMemo(() => listOrders())` — receives the raw `Response` as the resolved value:
+no navigation happens, and the type still claims your data. (When a mounted router's
+single-flight hook intercepts a direct POST call, it does navigate, but the call
+resolves to `null`; a direct `GET()` read always gets the `Response`.) Either way the
+caller never gets its data, so the redirect guard belongs to functions called through
+the router:
+
+```ts
+import { getRequestEvent, redirect, respond } from '@solidjs/web';
+
+// called through a router action/query: the router navigates to /sign-in
+export async function listOrders() {
+  'use server';
+  const userId = getRequestEvent()?.locals.userId;
+  if (!userId) throw redirect('/sign-in');
+  return database.orders.forUser(userId);
+}
+
+// no router in the project (core action + server functions): reject instead
+export async function listMyOrders() {
+  'use server';
+  const userId = getRequestEvent()?.locals.userId;
+  if (!userId) throw respond(null, { status: 401 });
+  return database.orders.forUser(userId);
+}
+```
+
+Without the router, fail with `throw respond(..., { status })` (the call rejects and
+`<Errored>` / the action's `catch` sees it), or return a value and navigate in the
+caller. Return a redirect when it is the successful outcome, throw it for an early
+exit. `redirect()` and `respond()` accept the same `revalidate`
 option as `reload()` when the mutation also changes location or returns a value;
 `revalidate: REVALIDATE_ALL` (`"*"`, from `@solidjs/web`) declares every cache entry
 stale, distinct from omitting it (the host's default) and from `[]` (nothing). After a router/server mutation do **not** follow with a client `fetch`
@@ -1476,10 +1695,22 @@ Express `app.use`. Server functions that return components
 (`serverFunctions: { components: true }`) are experimental preview — do not use
 them unless the project already has that flag on.
 
-Unscripted forms: `<form method="post" action={createTodo.url}>` (the reference
-`.url`), not a client `preventDefault` + `fetch`, and not a hand-built
-`/_server/` URL. GET forms (`method="get" action={search.url}`) are only for
-idempotent search — do not use a GET form for a mutation.
+Unscripted (no-JS) POST forms go through a router action —
+`const save = action(createTodo, "create-todo")` from `@solidjs/router`, then
+`<form action={save} method="post">` — not a client `preventDefault` + `fetch`, not a
+hand-built `/_server/` URL, and not `action={createTodo.url}`: a bare `"use server"`
+function keeps its declared function type, so `.url` is a type error (TS2339) even
+though it exists at runtime (and `serverFunctionActionUrl(createTodo)` is TS2345).
+The post arrives as one `FormData` argument, so the function behind `action={save}`
+takes `(form: FormData)` and parses and validates the fields inside; any other
+signature makes `action={save}` a type error (TS2322). Bind leading JSON-safe
+arguments with `action={save.with(id)}` for `(id: string, form: FormData)`; a function
+that already has a typed signature gets a separate `FormData` server function that
+parses and calls it.
+`.url` is typed only on `GET()` / `live()` references, which makes it the address of a
+`method="get"` search form (`action={searchProducts.url}`; the function receives the
+fields as `URLSearchParams`). GET forms are only for idempotent search — do not use a
+GET form for a mutation.
 
 ### Document head — no MetaProvider
 
@@ -1515,8 +1746,11 @@ how to reuse. Prefer the form on the right.
 | `action(async function* () { await save(); setX(v); })` | `yield save()` or `await save(); yield; setX(v)` |
 | `action(async (item) => { ... })` with core `action` from `solid-js` | `action(function* (item) { ...; yield ...; ... })` — only a generator re-enters the transaction (`solid2-kit check` flags this). Router `action` from `@solidjs/router` is the one that takes `async (form) => ...` |
 | `todos()` on a store | `todos.length` / `todo.title` (property reads) |
+| `todos.push(x)` / `state.count++` / `todo.done = !todo.done` on the store itself | `setTodos((draft) => { draft.push(x); })` — writes to the store proxy outside a setter are silently ignored (no error, no warning, tsc passes) |
+| `createStore({ selected: new Set<string>() })` + `draft.selected.add(id)` | `selected: {} as Record<string, true>` + `draft.selected[id] = true` / `delete draft.selected[id]`, or `draft.selected = new Set([...draft.selected, id])` — `Map` / `Set` / `Date` are stored as-is, not tracked |
 | `draft.todos = fresh` (wholesale fresh-tree assignment) | `reconcile(fresh, "id")`, or function-form `createStore` / `createProjection` (auto-keyed by `"id"`). Removal via `setTodos((t) => t.filter(...))` is fine — survivors keep identity |
-| `createEffect(() => user, (u) => log(u.name))` | `createEffect(() => user.name, (name) => log(name))` |
+| `createEffect(() => user, (u) => { log(u.name); })` | `createEffect(() => user.name, (name) => { log(name); })` |
+| `createEffect(() => title(), (t) => (document.title = t))` / `(v) => setX(v)` | `(t) => { document.title = t; }` — apply returns a cleanup or nothing; any other return value halts reactivity. An apply that only calls a local setter is rule 4 even with braces (`solid2-kit check` flags it): use a (writable) derivation |
 | `<Loading fallback={<PageSkeleton />}>{/* header + data */}</Loading>` | wrap only the data slot; chrome stays outside |
 | `<Loading on={id} fallback={...}>` (the accessor) | `on={id()}` — a value, so identity changes can show fallback |
 | `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
@@ -1553,15 +1787,17 @@ how to reuse. Prefer the form on the right.
 | `clientOnly` split (or `isServer` branch) for one browser-only *value* | `createMemo(() => localStorage.getItem(k), { ssrSource: "client" })` — `"hybrid"` when server data mixes with client signals |
 | `await flush()` / `flush()` to wait on a pending memo | `await resolve(() => value())` (or Testing Library async queries); `flush()` only drains staged *sync* writes |
 | `action(function* () { setX(v); })` around a navigation-shaped setter | plain setter; async computeds hold previous values. Core `action` only when writes happen *after* async work |
-| `createContext` + a root provider for a true app singleton | module-level signal/store (SSR: shared across requests). Context is subtree scoping |
+| `export const [cart, setCart] = createStore(...)` for app-wide state | `createCart()` called by a `CartProvider` at the root of `App`, read with `useCart()` over `createContext<T>()` — module state has no owner and, under SSR, one instance serves every request (`[SERVER_WRITE]`). Module scope is for constants and `createContext` |
 | `import { GET } from "@solidjs/start"` / `createAsync` / `useSubmission` / `<FileRoutes />` / `"use client"` | `GET` from `@solidjs/web/server-functions`; `createMemo(() => getUser(id()))`; `useSubmissions`; `fileRoutes(pageRoutes)`; Solid has no `"use client"` |
 | `<Show keyed when={user()}>` by default | default `Show` (keeps children mounted); `keyed` only when internal state must reset |
 | overlapping truthy `<Match>`es all expected to render | first truthy `<Match>` wins; later matches are skipped |
 | missing `<HydrationScript />` / one script for many roots | once, before app markup, when the app owns the document; distinct `renderId` per extra root |
-| `Router.paths` as the current URL; calling `preload()` and using the return as props | `useLocation` / `useParams`; factory/route `preload` result is `props.data` |
+| `Router.paths` as the current URL | `useLocation` / `useParams` |
+| `preload: async ({ params }) => getProduct(params.id)` + `props.data.name` in the page | `preload: ({ params }) => void getProduct(params.id)` + `createMemo(() => getProduct(props.params.id))` — `props.data` is captured once when the route matches (stale on param change; a Promise for async preloads) |
 | `query.get(key)` with no guaranteed entry; `query.set(key, promise)` | `query.get` throws if missing; `query.set` does not accept a promise |
 | `onCleanup(() => ...)` in a component body | `onSettled(() => { ...; return cleanup })` — `onCleanup` is for custom primitives |
-| `onSettled` with reactive reads expecting re-runs | each call is a **single** fire; reads are untracked. Ongoing work is `createEffect` |
+| `onSettled` with reactive reads expecting re-runs | each call is a **single** fire; reads are untracked. Ongoing work is `createEffect`, created in the component body |
+| `onSettled(() => { const id = setInterval(tick, 1000); onCleanup(() => clearInterval(id)); })` | `onSettled(() => { const id = setInterval(tick, 1000); return () => clearInterval(id); })` — `onCleanup`, `createMemo` / `createEffect`, and `flush()` throw inside the callback |
 | `<Router>` nested inside `<Router>` | one instance; nest `children` arrays (or a lazy children thunk) |
 | `const View = tab() ? A : B; return <View />` | `const View = dynamic(() => (tab() ? A : B))` — the ternary at setup freezes the choice |
 | `<For each={resolved()}>` after `children()` | `{resolved.toArray()}` — resolved children are not a reactive data list |
@@ -1572,7 +1808,7 @@ how to reuse. Prefer the form on the right.
 | `createMemo(async fn, { loadingValue })` / `{ seedLoadingValue: true }` as the default first-flight UI | `<Loading>` for first flight; those options are escape hatches (store projections use `seedLoadingValue`) |
 | `setSubmitted(true)` + an effect that watches it | do the work in the handler or an `action` |
 | `findUser(userId)` with the id from the client as identity | `getRequestEvent()!.locals.userId` |
-| `action={"/_server/" + id}` in app JSX | `action={createTodo.url}` or a router `action` |
+| `action={"/_server/" + id}` / `action={createTodo.url}` on a POST form | a router action: `const save = action(createTodo, "create-todo")` + `<form action={save} method="post">` over a `(form: FormData)` server function (other signatures are TS2322) — `.url` on a bare `"use server"` function is TS2339; it is typed only on `GET()` / `live()` references (GET search forms) |
 | `<form method="get" action={update.url}>` for a mutation | GET forms only for idempotent search; mutations are POST |
 | `window.location.href = ...` / `history.pushState` | `useNavigate()` or `<a href={Router.paths...}>` |
 | `class={{ active: location.pathname === "/about" }}` hand-rolled link state | CSS on automatic `aria-current` / `data-active` / `data-pending`; `useLinkState` in JSX, `useIsRouting()` for progress bars |
@@ -1587,7 +1823,7 @@ how to reuse. Prefer the form on the right.
 | `class={{ pending: isPending(id) }}` flashing on every navigation | same class + a short CSS `transition-delay` so only slow swaps show |
 | `<Comments />` nested under `{story().title}` assumed to waterfall | both mount immediately and fetch in parallel if the child reads an already-known id; a real waterfall is `createMemo(() => fetchAuthor(story().authorId))` or `storyId={props.story.id}` |
 | `<Errored>` as a terminal ErrorBoundary; `reset={() => location.reload()}` | the boundary heals when the source succeeds again; `reset` retries collected *sources*, not a UI remount |
-| `<Errored>` around a list catching a toggle/save failure | catch expected mutation failures in the `action`; keep row errors in a map the projection folds in (survives overlay discard) |
+| `<Errored>` around a list expected to catch a toggle/save failure | an error thrown out of an `action` never reaches `<Errored>` — it reverts the overlay and rejects the call's promise. Catch expected failures in the `action` (row errors in a map the projection folds in, which survives overlay discard; otherwise a toast) and `.catch` the call in the handler |
 | `yield { ...tick, connected: true }` from `live()` | yield the value; wire status is `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`) |
 | sibling `<Loading>` fallbacks stacking as popcorn | `<Reveal collapsed>` (sequential default) suppresses tail skeletons past the frontier |
 | in-memory cache around a GET server function | `return respond(value, { headers: { "cache-control": "..." } })` — metadata rides HTTP, the value rides the graph |
@@ -1599,6 +1835,7 @@ how to reuse. Prefer the form on the right.
 | a held write with no feedback anywhere | pair it with `isPending()` / `latest()` / an optimistic value / `affects()` — otherwise dev + attribution reports `[SILENT_HOLD]` |
 | `refresh(getUser.key)` / `revalidate(user)` / `return refresh()` from `"use server"` | three APIs: core `refresh(source)` reruns a reactive source; router `revalidate(getUser.key)` invalidates the query cache; `return reload({ revalidate: "todos" })` asks the integration to refresh cached data |
 | `return redirect(...)` as the only redirect shape | guards `throw redirect("/sign-in")`; `redirect()` / `respond()` take `revalidate` too when the mutation also moves or returns a value |
+| `throw redirect("/sign-in")` / `return reload(...)` in a function called directly (core `action`, handler, plain memo) | only Solid Router `action` / `query` (and no-JS form posts) apply them — a direct caller resolves to the raw `Response` (or `null` when the router's single-flight hook intercepts a POST call), typed as your data. Without the router: `throw respond(null, { status: 401 })` or return a value and navigate in the caller |
 | `submission.clear()` from an effect | on dismiss/resubmit only — from an effect, errors flash and vanish |
 | `revalidate(liveSource)` | `live()` updates through the open stream; do not revalidate it |
 | `refresh(user)` without `affects` when the reload should look pending | pair `affects(user)` with `refresh(user)` — a bare `refresh` re-asks quietly |
@@ -1633,7 +1870,8 @@ how to reuse. Prefer the form on the right.
 | `createRenderEffect` / `createTrackedEffect` as the default effect | two-phase `createEffect(compute, apply)` |
 | `createEffect(() => source(), () => setError(null))` to reset a signal | `createSignal(() => { source(); return null; })` — the writable derivation resets on change; a sole-setter apply is rule 4 |
 | a "server-safe" initial value adopted after mount (React hydration-mismatch fix) | client mode mounts with `render()` into an empty body — no hydration, no mismatch; read `localStorage` / `matchMedia` directly at signal creation |
-| rewrite `App.tsx` with loading/error branches, or snapshot/restore, when the list moves to the server | same `setTodos`; wrap mutations in `action`; swap `createOptimisticStore` + a server-functions file. The overlay is discarded; the confirmed store is the truth |
+| rewrite `App.tsx` with loading/error branches, or snapshot/restore, when the list moves to the server | same `setTodos`; wrap mutations in `action`; swap in function-form `createOptimisticStore(() => api.list(), [])` + a server-functions file. The overlay is discarded; the confirmed store is the truth |
+| `createOptimisticStore<Todo[]>([])` holding the list, saved rows written after `yield` | `createOptimisticStore(() => api.list(), [])` + `refresh(todos)` (or a function form over a separate `createStore`) — the value form is a pure overlay: action writes vanish on settle |
 | disable an optimistic row until ack, or mutex rapid clicks / freeze unrelated writes | keep the control enabled; `action` is the transaction. An in-flight action does not freeze other writes. Failed-action replay is optional |
 | tRPC / RPC type-gen around `"use server"` | TypeScript does not cross HTTP — validate inside the function. Locals only the body reads (db, secrets) stay off the client |
 | `src/routes/api/todos.ts` (or a Next `route.ts`) wrapping `db.todos.insert` | `"use server"` *is* the RPC. API routes are for real HTTP endpoints (webhooks), not the app's own mutations |
@@ -1786,9 +2024,10 @@ always-applied rules installed alongside this skill.
       `loading`/`error` signals or `=== undefined` readiness branches. First load is
       `<Loading>`; refetch indicator is `isPending(user)` (the accessor, not `user()`)
       or `isPending(selectedId)` when the write is the question. `<Errored>` heals
-      when the source succeeds; `reset` retries sources, not a UI remount. Per-row
-      mutation failures stay in the action/projection, not in `<Errored>` around
-      the list. Error monitoring goes through `configureClientErrors` /
+      when the source succeeds; `reset` retries sources, not a UI remount. Mutation
+      failures never reach `<Errored>` (an escaping error reverts the overlay and
+      rejects the call): catch them in the action/projection, and `.catch` the call
+      in the handler. Error monitoring goes through `configureClientErrors` /
       `configureServerErrors` (or `render(..., { onError })`), never a side effect in
       the fallback. Core `refresh(source)`, router `revalidate(key)`, and `return reload(...)` are
       different APIs — do not mix them. Client → server is additive (same
@@ -1813,7 +2052,10 @@ always-applied rules installed alongside this skill.
       component choice with `dynamic()`. No `React.lazy`, no effects inside ref callbacks.
 - [ ] Browser-only code uses `isServer` / `clientOnly` (components) / `ssrSource`
       (values), not `typeof window`.
-      Component teardown is `onSettled` (return cleanup), not `onCleanup`.
+      Component teardown is `onSettled` (return cleanup), not `onCleanup`; nothing
+      inside the `onSettled` callback calls `onCleanup`, `flush()`, or creates a
+      memo/effect. Effect `apply` functions have block bodies and return only a
+      cleanup or nothing.
 - [ ] Dev console shows no diagnostics: reads in tracking scopes (no
       `[STRICT_READ_UNTRACKED]`), store setters synchronous and never called at
       body level (no `[ASYNC_STORE_SETTER]` / `[REACTIVE_WRITE_IN_OWNED_SCOPE]`), held
