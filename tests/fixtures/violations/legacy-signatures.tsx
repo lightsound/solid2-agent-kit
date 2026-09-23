@@ -28,6 +28,7 @@ export function View() {
   return (
     <>
       <input use:autofocus />
+      <link use:preload as="font" href="/a.woff2" />
       <Meta key={'x'} name="description" />
       <p>{String(doubled()) + labelled() + rows.id + lookup().size}</p>
     </>

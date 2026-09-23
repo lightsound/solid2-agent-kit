@@ -657,11 +657,12 @@ const CHECKS = [
   {
     // Valueless attributes count too (`<input use:autofocus />`): followed by
     // `/>`, `>`, or another attribute, unlike an unspaced object key
-    // (`{ on:true }`, `{ on:x = false }`, `{ attr:v as string }`).
-    // `prop:` is still a Solid 2 namespace and is not listed.
+    // (`{ on:true }`, `{ on:x = false }`, `{ attr:v as string }`); `as="font"`
+    // and SVG `in="…"` are still attributes. `prop:` is still a Solid 2
+    // namespace and is not listed.
     id: 'solid1-jsx-namespace',
     pattern:
-      /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?==|\s*\/?>|\s+(?!(?:as|satisfies|in|instanceof)\b)[A-Za-z_${])/g,
+      /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?==|\s*\/?>|\s+(?!(?:as|satisfies|in|instanceof)\b(?!\s*=))[A-Za-z_${])/g,
     message:
       'Solid 1.x JSX namespace. Use ref callbacks (and directive factories), camelCase event props, and standard attributes.',
   },
