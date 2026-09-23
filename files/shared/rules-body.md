@@ -272,7 +272,7 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     under the path and destroys row identity — same class of problem as unkeyed `<For>`.
     `createProjection` returns the store itself, not a tuple (`const [rows] = createProjection(…)`
     type-checks and yields row 0). `reconcile` onto a single-object store whose `id`
-    changes throws (`Cannot reconcile states with different identity`) — switch records
+    changes throws in dev (`Cannot reconcile states with different identity`) — switch records
     with the function form (`createStore(() => getUser(id()), seed)`) or a returned object.
 21. **Solid inputs do not rewind the DOM.** `value={v()}` writes only when `v` changes; a
     React-style controlled input that ignores invalid keystrokes silently breaks. To reject
