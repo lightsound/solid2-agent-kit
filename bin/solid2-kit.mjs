@@ -1063,6 +1063,33 @@ const BANNED_DEPS = {
   vinxi: 'SolidStart 1.x toolchain. Solid 2 uses @solidjs/vite-plugin directly.',
 };
 
+// Packages whose npm `latest` dist-tag is still the Solid 1.x line (solid-js
+// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29): a bare `pnpm add <name>`
+// installs it. The Solid 2 releases are published under `next`.
+const SOLID2_LINE_PACKAGES = [
+  { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01]\./, fix: 'Install solid-js@next (^2).' },
+  {
+    name: '@solidjs/router',
+    id: 'router-version',
+    solid1: /^[\s^~=v]*[01]\./,
+    fix: 'Router 1.x is JSX <Route> with a solid-js ^1 peer; install @solidjs/router@next (2.x, createRouter({ routes })).',
+  },
+  {
+    name: '@solidjs/meta',
+    id: 'meta-version',
+    solid1: /^[\s^~=v]*0\./,
+    fix: 'Meta 0.x is built for Solid 1 (<MetaProvider> required); install @solidjs/meta@next (1.x).',
+  },
+];
+
+function installedVersion(target, name) {
+  try {
+    return JSON.parse(readFileSync(join(target, 'node_modules', name, 'package.json'), 'utf8')).version;
+  } catch {
+    return undefined;
+  }
+}
+
 const CONFIG_SOURCE = /\.(?:m|c)?[jt]s$/;
 
 // Files installed by this kit that carry a version marker. When the kit
@@ -1079,9 +1106,21 @@ function doctorFindings(target) {
   for (const [name, message] of Object.entries(BANNED_DEPS)) {
     if (name in deps) report(`dep-${name.replace(/[@/]/g, '')}`, `package.json depends on "${name}". ${message}`);
   }
-  const solidRange = deps['solid-js'];
-  if (typeof solidRange === 'string' && /^[\s^~=v]*[01]\./.test(solidRange)) {
-    report('solid-js-version', `package.json pins solid-js "${solidRange}" — this kit teaches Solid 2.x; upgrade to ^2.`);
+  for (const { name, id, solid1, fix } of SOLID2_LINE_PACKAGES) {
+    const range = deps[name];
+    if (typeof range === 'string' && solid1.test(range)) {
+      report(id, `package.json pins ${name} "${range}" — the Solid 1.x line; this kit teaches Solid 2.x. ${fix}`);
+      continue;
+    }
+    // A range such as "latest" or "*" only shows its line once resolved.
+    if (range === undefined) continue;
+    const installed = installedVersion(target, name);
+    if (installed && solid1.test(installed)) {
+      report(
+        id,
+        `node_modules has ${name} ${installed} (package.json: "${range}") — the Solid 1.x line; this kit teaches Solid 2.x. ${fix}`,
+      );
+    }
   }
 
   for (const entry of readdirSync(target, { withFileTypes: true })) {
