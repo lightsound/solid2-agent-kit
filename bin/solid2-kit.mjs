@@ -780,19 +780,25 @@ function check() {
 
   let files;
   let scanned;
+  let walked = true;
   if (pathArgs.length > 0) {
     // Explicit path mode: named directories are walked, named files are
     // checked when they are .ts/.tsx/.jsx sources.
     files = [];
     scanned = pathArgs;
+    walked = false;
     for (const arg of pathArgs) {
       const path = resolve(target, arg);
       if (!existsSync(path)) {
         console.error(`solid2-kit check — path not found: ${path}`);
         process.exit(2);
       }
-      if (statSync(path).isDirectory()) files.push(...walk(path));
-      else if (SOURCE_FILE.test(path)) files.push(path);
+      if (statSync(path).isDirectory()) {
+        walked = true;
+        files.push(...walk(path));
+      } else if (SOURCE_FILE.test(path)) {
+        files.push(path);
+      }
     }
   } else {
     const srcDir = resolve(target, flagValue('--dir', 'src'));
@@ -804,8 +810,14 @@ function check() {
     scanned = [relative(target, srcDir) || '.'];
   }
 
-  // A run that scanned nothing verified nothing; passing it would read as a
-  // clean gate in CI and in agent loops.
+  // A walk that found no sources points at the wrong tree; passing it would
+  // read as a clean gate in CI and in agent loops. A list of named files with
+  // no sources among them (changed-file pipelines on a docs-only change) has
+  // nothing to gate and passes.
+  if (files.length === 0 && !walked) {
+    console.log('solid2-kit check — OK (no .ts/.tsx/.jsx sources among the named files; nothing to check).');
+    return;
+  }
   if (files.length === 0) {
     console.error(
       `solid2-kit check — no .ts/.tsx/.jsx sources found in ${scanned.join(', ')}; nothing was checked. Point --dir or [paths...] at the source tree.`,

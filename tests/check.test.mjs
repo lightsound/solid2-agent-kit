@@ -130,8 +130,9 @@ if (dirClean.status !== 0 || !dirClean.stdout.includes(`(${cleanCount} files sca
   fail(`expected \`check clean\` (directory argument) to pass with ${cleanCount} files scanned`, dirClean);
 }
 
-// A run that scans nothing must not pass, and a missing path is an error.
-// node_modules and dot-directories are never walked.
+// A walk that finds no sources must not pass, and a missing path is an error.
+// node_modules and dot-directories are never walked. Named files with no
+// sources among them (a docs-only changed-file list) pass with nothing to check.
 const scratch = mkdtempSync(join(tmpdir(), 'solid2-kit-check-'));
 process.on('exit', () => rmSync(scratch, { recursive: true, force: true }));
 mkdirSync(join(scratch, 'src/node_modules/react'), { recursive: true });
@@ -142,11 +143,15 @@ writeFileSync(join(scratch, 'src/notes.md'), '# notes\n');
 for (const [label, result] of [
   ['default --dir src with no sources', runPaths(scratch)],
   ['directory argument with no sources', runPaths(scratch, 'src')],
-  ['non-source file argument', runPaths(scratch, 'src/notes.md')],
+  ['directory argument with no sources next to a non-source file', runPaths(scratch, 'src', 'src/notes.md')],
 ]) {
   if (result.status !== 2 || !result.stderr.includes('nothing was checked')) {
-    fail(`expected a 0-file run (${label}) to exit 2 with "nothing was checked"`, result);
+    fail(`expected a 0-file walk (${label}) to exit 2 with "nothing was checked"`, result);
   }
+}
+const docsOnly = runPaths(scratch, 'src/notes.md');
+if (docsOnly.status !== 0 || !docsOnly.stdout.includes('nothing to check')) {
+  fail('expected named non-source files only to pass with "nothing to check"', docsOnly);
 }
 const missingPath = runPaths(scratch, 'does-not-exist');
 if (missingPath.status !== 2 || !missingPath.stderr.includes('path not found')) {
@@ -154,5 +159,5 @@ if (missingPath.status !== 2 || !missingPath.stderr.includes('path not found')) 
 }
 
 console.log(
-  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; file mode gated a single file; directory arguments walked; 0-file runs and missing paths fail)`,
+  `check fixtures — OK (clean passed; violations reported ${expected.join(', ')}; TanStack Router names exempt only when imported; file mode gated a single file; directory arguments walked; 0-file walks and missing paths fail; docs-only file lists pass)`,
 );
