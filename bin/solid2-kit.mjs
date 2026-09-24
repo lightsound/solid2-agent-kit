@@ -1269,7 +1269,7 @@ const VERSION_CHECKED = [...new Set([...SOLID2_LINE_PACKAGES.map((p) => p.name),
 // The lower bound of a single-comparator range ("^2.0.0-rc.0", "~2.0.0-rc.8",
 // ">=2.0.0-rc.0", "2.0.0-rc.0") or an installed version. Dist-tags, "*",
 // unions and protocol specs have no bound to read; their install is checked.
-const LOWER_BOUND = /^\s*(?:[\^~]|>=|=)?\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s*$/;
+const LOWER_BOUND = /^\s*(?:[\^~]|>=|=)?\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\s*$/;
 
 function versionProblem(name, version) {
   const line = SOLID2_LINE_PACKAGES.find((p) => p.name === name);

@@ -205,6 +205,7 @@ for (const { name, id, bad, good } of [
         [`^${stale}`, undefined, `declared ^${stale} (what a bare npm install writes)`],
         [stale, undefined, `pinned ${stale}`],
         ['>=2.0.0-beta.1', undefined, 'declared >=2.0.0-beta.1'],
+        ['latest', `${stale}+build.1`, `installed ${stale} with build metadata`],
       ],
       good: [
         ['latest', '2.0.0-rc.9', 'installed from `latest` once it is rc.9'],
@@ -212,6 +213,7 @@ for (const { name, id, bad, good } of [
         ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
         ['^2.0.0', undefined, 'declared ^2.0.0 (stable)'],
         ['latest', '2.0.0', 'installed from `latest` once stable'],
+        ['latest', '2.0.0-rc.9+build.1', 'installed rc.9 with build metadata'],
         ['*', undefined, 'declared * but not installed yet'],
       ],
     };
