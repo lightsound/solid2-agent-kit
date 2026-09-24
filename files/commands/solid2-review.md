@@ -50,8 +50,9 @@ Steps:
      `configureClientErrors` / `configureServerErrors` / `render(fn, root, undefined, { onError })`
      (options are `render`'s 4th argument — a 3rd-argument object is `init`);
    - store setter callbacks that `await` (the draft closes when the callback returns —
-     `[ASYNC_STORE_SETTER]`), store setters called at component-body top level, and
-     `latest()` used as a null-safe read of an unsettled source;
+     `[ASYNC_STORE_SETTER]` <!-- upstream:async-store-setter-throws -->), store setters called at
+     component-body top level <!-- upstream:store-write-owned-scope -->, and `latest()` used as a
+     null-safe read of an unsettled source <!-- upstream:latest-throws-unsettled -->;
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;
    - mutations on a value read through `live()` that settle on `yield save()` alone or
      `refresh()` the live-derived store, instead of `yield until(predicate, { timeout })`

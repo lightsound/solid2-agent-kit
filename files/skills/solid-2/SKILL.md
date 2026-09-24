@@ -69,7 +69,7 @@ Most React `useEffect` code should NOT become `createEffect`:
 | Inspect, count, or iterate children | `children(() => props.children)` then `.toArray()` |
 | Code-split a component | `lazy(() => import("./X"))` read under `<Loading>` |
 | Named export from a lazy module | `lazy(() => import("./pages"), { export: "About" })` |
-| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity; `<Dynamic>` is deprecated) |
+| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity; `<Dynamic>` is deprecated) <!-- upstream:dynamic-deprecated --> |
 | Overlay / modal | `<Portal>` — hoist async reads *above* the portal (reads inside start on the client) |
 | Async value used several layers down | Create the memo high; pass `value={memo()}` through intermediates (they do not wait); put `<Loading>` around the leaf read |
 | Nested child with its own fetch | Leave it nested — it runs in parallel. Sequential only when the second call needs the first response (`fetchAuthor(story().authorId)`) |
@@ -2110,7 +2110,8 @@ always-applied rules installed alongside this skill.
       cleanup or nothing.
 - [ ] Dev console shows no diagnostics: reads in tracking scopes (no
       `[STRICT_READ_UNTRACKED]`), store setters synchronous and never called at
-      body level (no `[ASYNC_STORE_SETTER]` / `[REACTIVE_WRITE_IN_OWNED_SCOPE]`), held
+      body level (no `[ASYNC_STORE_SETTER]` <!-- upstream:async-store-setter-throws --> /
+      `[REACTIVE_WRITE_IN_OWNED_SCOPE]` <!-- upstream:store-write-owned-scope -->), held
       writes paired with `isPending` / `latest` / optimistic values / `affects()`
       (no `[SILENT_HOLD]`). Attribution-only costs
       (`[IMMUTABLE_UPDATE_IN_STORE]`, `[UNSTABLE_LIST_IDENTITY]`, `[EFFECT_*]`)
