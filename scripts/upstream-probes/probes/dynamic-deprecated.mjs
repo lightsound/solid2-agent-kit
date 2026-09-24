@@ -4,13 +4,24 @@ export const packages = ['@solidjs/web'];
 export async function probe(h) {
   const { tags } = h.typecheck('import { Dynamic, dynamic } from "@solidjs/web";\nvoid Dynamic; void dynamic;\n');
   const deprecated = tags.Dynamic?.includes('deprecated') ?? false;
-  const { exported } = h.nodeJson(
-    'import * as web from "@solidjs/web";\nconsole.log(JSON.stringify({ exported: typeof web.Dynamic === "function" }));\n',
+  const r = h.nodeJson(
+    `import { createComponent, createRoot, flush } from "solid-js";
+     import * as web from "@solidjs/web";
+     const logged = [];
+     for (const level of ["warn", "error", "info", "log"]) console[level] = (...args) => logged.push(level + ": " + args.map(String).join(" ").slice(0, 120));
+     let rendered = null;
+     if (typeof web.Dynamic === "function") {
+       let view;
+       createRoot(() => { view = createComponent(web.Dynamic, { component: (p) => "tag:" + p.x, x: 1 }); });
+       flush();
+       rendered = String(typeof view === "function" ? view() : view);
+     }
+     process.stdout.write(JSON.stringify({ exported: typeof web.Dynamic === "function", rendered, logged }) + "\\n");`,
     { conditions: ['browser', 'development'] },
   );
-  const warns = /deprecat/i.test(h.read('@solidjs/web', 'dist/web.dev.js'));
+  const renders = r.rendered === 'tag:1';
   return {
-    reproduces: deprecated && exported && !warns,
-    observed: `@deprecated tag ${deprecated ? 'present' : 'absent'}; runtime export ${exported ? 'present' : 'absent'}; dev build ${warns ? 'mentions deprecation' : 'has no deprecation warning'}`,
+    reproduces: deprecated && r.exported && renders && r.logged.length === 0,
+    observed: `@deprecated tag ${deprecated ? 'present' : 'absent'}; runtime export ${r.exported ? 'present' : 'absent'}; dev-build render ${renders ? 'works' : `gave ${JSON.stringify(r.rendered)}`}; console ${r.logged.length ? `logged ${JSON.stringify(r.logged)}` : 'silent'}`,
   };
 }
