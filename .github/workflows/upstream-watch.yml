@@ -1,0 +1,74 @@
+name: upstream-watch
+
+on:
+  schedule:
+    # Weekly, Monday 06:30 UTC — Solid 2 prereleases can fix or change what the
+    # kit's <!-- upstream:<id> --> markers describe.
+    - cron: "30 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/check-upstream.mjs
+      - scripts/upstream-probes/**
+
+permissions:
+  contents: read
+
+jobs:
+  # A probe change must reproduce every claim on the versions the kit was verified against.
+  baseline:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: Run upstream probes on the baseline versions
+        run: node scripts/check-upstream.mjs --versions baseline
+
+  watch:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - name: Run upstream probes on the newest Solid 2 prereleases
+        id: probe
+        run: |
+          set +e
+          node scripts/check-upstream.mjs --json upstream-report.json --markdown upstream-report.md
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+      # One open issue labeled upstream-watch at a time: created on the first
+      # finding, rewritten (plus a comment, so watchers are notified) when the
+      # findings change, closed on the first clean run.
+      - name: Sync the tracking issue
+        if: steps.probe.outputs.exit == '0' || steps.probe.outputs.exit == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EXIT: ${{ steps.probe.outputs.exit }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          label=upstream-watch
+          number=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')
+          if [ "$EXIT" = "1" ]; then
+            fingerprint=$(node -p "require('./upstream-report.json').fingerprint")
+            if [ -z "$number" ]; then
+              gh label create "$label" --color d93f0b --description "A Solid 2 claim the kit documents changed upstream" 2>/dev/null || true
+              gh issue create --title "Upstream watch: Solid 2 changed a claim the kit documents" --label "$label" --body-file upstream-report.md
+            elif ! gh issue view "$number" --json body --jq .body | grep -q "fingerprint=$fingerprint"; then
+              gh issue edit "$number" --body-file upstream-report.md
+              gh issue comment "$number" --body "The findings changed; the description is updated. Run: $RUN_URL"
+            fi
+          elif [ -n "$number" ]; then
+            gh issue close "$number" --comment "Every marked claim reproduces and all watched packages are at baseline. Run: $RUN_URL"
+          fi
+      - name: Fail when the probes could not run
+        if: steps.probe.outputs.exit != '0' && steps.probe.outputs.exit != '1'
+        run: exit 1
