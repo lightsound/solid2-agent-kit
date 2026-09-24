@@ -3,6 +3,8 @@
   "dependencies": {
     "react": "^19.0.0",
     "solid-js": "^1.9.5",
+    "@solidjs/web": "^2.0.0-rc.0",
+    "@solidjs/signals": "^2.0.0-rc.0",
     "@solidjs/router": "^1.0.0",
     "@solidjs/meta": "^0.29.4",
     "@tanstack/solid-router": "^1.170.36",
@@ -10,6 +12,8 @@
   },
   "devDependencies": {
     "vite-plugin-solid": "^2.11.0",
+    "@solidjs/vite-plugin": "^3.0.0-next.35",
+    "@solidjs/diagnostics": "^2.0.0-rc.2",
     "eslint-plugin-solid": "^0.14.5",
     "@solidjs/testing-library": "^0.8.10"
   }

@@ -24,6 +24,7 @@ import {
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BASELINE, compareVersions } from './baseline.mjs';
 
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const VERSION = JSON.parse(readFileSync(join(KIT_ROOT, 'package.json'), 'utf8')).version;
@@ -273,7 +274,7 @@ function init() {
   if (hooksNote) console.log(`  note: ${hooksNote}`);
   if (!hasDiagnosticsDependency(target)) {
     console.log(
-      '  note: the solid-2 skill\'s development loop drives the dev server\'s /__solid/diagnostics endpoint; add "@solidjs/diagnostics" to devDependencies so @solidjs/vite-plugin serves it (auto-on when declared). Without it the fallback is an isDev-guarded attribution.enable({ log: false }).',
+      `  note: the solid-2 skill's development loop drives the dev server's /__solid/diagnostics endpoint; add "@solidjs/diagnostics" to devDependencies (install @solidjs/diagnostics@^${BASELINE['@solidjs/diagnostics'].baseline} — npm \`latest\` can be an older rc) so @solidjs/vite-plugin serves it (auto-on when declared). Without it the fallback is an isDev-guarded attribution.enable({ log: false }).`,
     );
   }
 }
@@ -1259,6 +1260,31 @@ const SOLID2_LINE_PACKAGES = [
   },
 ];
 
+// Packages doctor checks the version of: the Solid 1.x lines above, then any
+// release older than the kit's baseline (bin/baseline.mjs) — a bare
+// `npm i @solidjs/web` installs `latest`, 2.0.0-rc.0, which the current
+// @solidjs/vite-plugin's `@solidjs/web ^2.0.0-rc.9` peer rejects.
+const VERSION_CHECKED = [...new Set([...SOLID2_LINE_PACKAGES.map((p) => p.name), ...Object.keys(BASELINE)])];
+
+// The lower bound of a single-comparator range ("^2.0.0-rc.0", "~2.0.0-rc.8",
+// ">=2.0.0-rc.0", "2.0.0-rc.0") or an installed version. Dist-tags, "*",
+// unions and protocol specs have no bound to read; their install is checked.
+const LOWER_BOUND = /^\s*(?:[\^~]|>=|=)?\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\s*$/;
+
+// `declared` ranges are judged by their floor: npm installs the `latest` tag
+// whenever it satisfies the range, so "^2.0.0-rc.0" resolves to rc.0 today.
+function versionProblem(name, version, declared) {
+  const line = SOLID2_LINE_PACKAGES.find((p) => p.name === name);
+  if (line?.solid1.test(version)) return `the Solid 1.x line; this kit teaches Solid 2.x. ${line.fix}`;
+  const baseline = BASELINE[name]?.baseline;
+  const lowest = version.match(LOWER_BOUND)?.[1];
+  if (baseline && lowest && compareVersions(lowest, baseline) < 0) {
+    const older = declared ? 'allows releases older than' : 'older than';
+    return `${older} ${baseline}, the release this kit's guidance is verified against (npm dist-tags lag on the Solid 2 prereleases, so a bare install can resolve an older one). Install ${name}@^${baseline}.`;
+  }
+  return null;
+}
+
 function installedVersion(target, name) {
   try {
     return JSON.parse(readFileSync(join(target, 'node_modules', name, 'package.json'), 'utf8')).version;
@@ -1283,21 +1309,19 @@ function doctorFindings(target) {
   for (const [name, message] of Object.entries(BANNED_DEPS)) {
     if (name in deps) report(`dep-${name.replace(/[@/]/g, '')}`, `package.json depends on "${name}". ${message}`);
   }
-  for (const { name, id, solid1, fix } of SOLID2_LINE_PACKAGES) {
+  for (const name of VERSION_CHECKED) {
+    const id = SOLID2_LINE_PACKAGES.find((p) => p.name === name)?.id ?? `${name.replace('@solidjs/', '')}-version`;
     const range = deps[name];
-    if (typeof range === 'string' && solid1.test(range)) {
-      report(id, `package.json pins ${name} "${range}" — the Solid 1.x line; this kit teaches Solid 2.x. ${fix}`);
+    if (typeof range !== 'string') continue;
+    const declared = versionProblem(name, range, true);
+    if (declared) {
+      report(id, `package.json pins ${name} "${range}" — ${declared}`);
       continue;
     }
-    // A range such as "latest" or "*" only shows its line once resolved.
-    if (range === undefined) continue;
+    // A range such as "latest" or "*" only shows its version once resolved.
     const installed = installedVersion(target, name);
-    if (installed && solid1.test(installed)) {
-      report(
-        id,
-        `node_modules has ${name} ${installed} (package.json: "${range}") — the Solid 1.x line; this kit teaches Solid 2.x. ${fix}`,
-      );
-    }
+    const resolved = installed && versionProblem(name, installed, false);
+    if (resolved) report(id, `node_modules has ${name} ${installed} (package.json: "${range}") — ${resolved}`);
   }
 
   for (const entry of readdirSync(target, { withFileTypes: true })) {

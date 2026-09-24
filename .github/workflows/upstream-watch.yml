@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - bin/baseline.mjs
       - scripts/check-upstream.mjs
       - scripts/upstream-probes/**
       - .github/workflows/upstream-watch.yml
