@@ -3,14 +3,16 @@
   "dependencies": {
     "solid-js": "^2.0.0",
     "@solidjs/web": "^2.0.0",
+    "@solidjs/signals": "^2.0.0-rc.9",
     "@solidjs/router": "^2.0.0-next.27",
     "@solidjs/meta": "^1.0.0-next.2",
     "@tanstack/solid-router": "^2.0.0-rc.8",
     "@tanstack/solid-query": "^6.0.0-rc.4"
   },
   "devDependencies": {
-    "@solidjs/vite-plugin": "^1.0.0",
+    "@solidjs/vite-plugin": "^3.0.0-next.44",
+    "@solidjs/diagnostics": "^2.0.0-rc.9",
     "@solidjs/testing-library": "^1.0.0",
-    "vite": "^7.0.0"
+    "vite": "^8.0.0"
   }
 }

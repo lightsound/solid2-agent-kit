@@ -1179,7 +1179,8 @@ effects** — a pure markup or styling change does not need it.
 2. **Name the scopes you changed** (`createMemo(fn, { name: "total" })`,
    `createStore(v, { name: "cart" })`) so chains and tables refer to them by name.
 3. **Record the interaction and ask.** First choice — no app code — is the diagnostics
-   endpoint: with `@solidjs/diagnostics` in `devDependencies`, the Vite plugin's
+   endpoint: with `@solidjs/diagnostics@next` in `devDependencies` (npm `latest` is an
+   older 2.0 rc), the Vite plugin's
    `diagnostics` option (auto-on when the package is declared; dev server only, never
    under vitest, `vite build`, or preview) injects the capture bridge and serves
    `/__solid/diagnostics`. `begin` enables attribution with `log: false` for the

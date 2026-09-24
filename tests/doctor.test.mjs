@@ -46,6 +46,10 @@ const expected = [
   'tanstack-router-version',
   'tanstack-query-version',
   'testing-library-version',
+  'web-version',
+  'signals-version',
+  'diagnostics-version',
+  'vite-plugin-version',
   'tsconfig-jsx',
   'tsconfig-jsx-import-source',
   'config-vite-plugin-solid',
@@ -186,6 +190,63 @@ for (const { name, id, bad, good } of [
       ['^1.0.0-beta.3', undefined, 'declared ^1.0.0-beta.3'],
     ],
   },
+  // Solid 2 prereleases older than the kit's baseline (bin/baseline.mjs):
+  // npm `latest` of @solidjs/web / @solidjs/signals is 2.0.0-rc.0 and of
+  // @solidjs/diagnostics 2.0.0-rc.2 while `next` is rc.9, and
+  // @solidjs/vite-plugin's `next` (3.0.0-next.35) trails its `latest`.
+  // The stable releases on `latest` must pass.
+  ...['@solidjs/web', '@solidjs/signals', '@solidjs/diagnostics'].map((name) => {
+    const stale = name === '@solidjs/diagnostics' ? '2.0.0-rc.2' : '2.0.0-rc.0';
+    return {
+      name,
+      id: `${name.replace('@solidjs/', '')}-version`,
+      bad: [
+        ['latest', stale, `installed from \`latest\` (${stale})`],
+        [`^${stale}`, undefined, `declared ^${stale} (what a bare npm install writes)`],
+        [stale, undefined, `pinned ${stale}`],
+        ['>=2.0.0-beta.1', undefined, 'declared >=2.0.0-beta.1'],
+      ],
+      good: [
+        ['latest', '2.0.0-rc.9', 'installed from `latest` once it is rc.9'],
+        ['next', '2.0.0-rc.10', 'installed from `next` past the baseline'],
+        ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
+        ['^2.0.0', undefined, 'declared ^2.0.0 (stable)'],
+        ['latest', '2.0.0', 'installed from `latest` once stable'],
+        ['*', undefined, 'declared * but not installed yet'],
+      ],
+    };
+  }),
+  {
+    name: '@solidjs/vite-plugin',
+    id: 'vite-plugin-version',
+    bad: [
+      ['next', '3.0.0-next.35', 'installed from `next` (3.0.0-next.35)'],
+      ['^3.0.0-next.35', undefined, 'declared ^3.0.0-next.35'],
+    ],
+    good: [
+      ['latest', '3.0.0-next.44', 'installed from `latest`'],
+      ['^3.0.0-next.44', undefined, 'declared ^3.0.0-next.44'],
+      ['^3.0.0', undefined, 'declared ^3.0.0 (stable)'],
+    ],
+  },
+  {
+    name: 'solid-js',
+    id: 'solid-js-version',
+    bad: [
+      ['^2.0.0-rc.0', undefined, 'declared ^2.0.0-rc.0'],
+      ['next', '2.0.0-beta.30', 'installed 2.0.0-beta.30'],
+    ],
+    good: [
+      ['next', '2.0.0-rc.9', 'installed from `next`'],
+      ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
+    ],
+  },
+  {
+    name: '@solidjs/router',
+    id: 'router-version',
+    bad: [['^2.0.0-next.20', undefined, 'declared ^2.0.0-next.20']],
+    good: [['^2.0.0-next.27', undefined, 'declared ^2.0.0-next.27']],
+  },
 ]) {
   for (const [range, installed, label] of bad) {
     const result = lineRun(name, range, installed);
@@ -197,6 +258,15 @@ for (const { name, id, bad, good } of [
     const result = lineRun(name, range, installed);
     if (result.status !== 0) fail(`expected ${name} ${label} to pass doctor`, result);
   }
+}
+
+// The stale-baseline message names the package, what resolved, and the range to install.
+const staleWeb = lineRun('@solidjs/web', 'latest', '2.0.0-rc.0');
+if (
+  !staleWeb.stderr.includes('[web-version] node_modules has @solidjs/web 2.0.0-rc.0 (package.json: "latest") — older than 2.0.0-rc.9') ||
+  !staleWeb.stderr.includes('Install @solidjs/web@^2.0.0-rc.9.')
+) {
+  fail('expected the web-version finding to name the resolved rc and the baseline range to install', staleWeb);
 }
 
 // Bare-major ranges ("^1", "~0") name the 1.x line without a minor.
@@ -211,4 +281,4 @@ for (const id of ['solid-js-version', 'router-version', 'meta-version']) {
   if (!bareMajorRun.stderr.includes(`[${id}]`)) fail(`expected a bare-major range to be reported as ${id}`, bareMajorRun);
 }
 
-console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; TanStack Router 1.x / TanStack Query 5.x / Testing Library 0.x declared or installed caught, rc/next lines passed; bare-major 1.x ranges caught)`);
+console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; TanStack Router 1.x / TanStack Query 5.x / Testing Library 0.x declared or installed caught, rc/next lines passed; Solid 2 prereleases older than the baseline (web/signals/diagnostics from \`latest\`, vite-plugin from \`next\`) caught, baseline and stable passed; bare-major 1.x ranges caught)`);
