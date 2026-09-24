@@ -69,7 +69,7 @@ Most React `useEffect` code should NOT become `createEffect`:
 | Inspect, count, or iterate children | `children(() => props.children)` then `.toArray()` |
 | Code-split a component | `lazy(() => import("./X"))` read under `<Loading>` |
 | Named export from a lazy module | `lazy(() => import("./pages"), { export: "About" })` |
-| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity; `<Dynamic>` is deprecated) |
+| Pick a component/tag from reactive state | `dynamic(() => ...)` from `@solidjs/web` (stable identity; `<Dynamic>` is deprecated) <!-- upstream:dynamic-deprecated --> |
 | Overlay / modal | `<Portal>` — hoist async reads *above* the portal (reads inside start on the client) |
 | Async value used several layers down | Create the memo high; pass `value={memo()}` through intermediates (they do not wait); put `<Loading>` around the leaf read |
 | Nested child with its own fetch | Leave it nested — it runs in parallel. Sequential only when the second call needs the first response (`fetchAuthor(story().authorId)`) |
@@ -125,7 +125,7 @@ usual defaults pattern. That is not Solid 1 `mergeProps`, which ignored
 (`omit(props, (key) => key.startsWith("data-"))`). `const rest = { ...props }` compiles
 and then never updates. Both helpers return **read-only live views** (since
 2.0.0-rc.9 for every input, plain objects included): assigning onto the result is a
-silent no-op, and `{ ...merged }` is an own object that carries no sources.
+silent no-op, and `{ ...merged }` is an own object that carries no sources. <!-- upstream:merge-omit-readonly -->
 
 ### Store updates (draft mutation)
 
@@ -142,7 +142,7 @@ setProfile((draft) => {
 The setter callback is a **synchronous transaction** — the draft closes when it
 returns. `setProfile(async (draft) => { draft.name = await load(); })` used to commit
 only the writes before the first `await` and silently drop the rest; since
-2.0.0-rc.9 it throws `[ASYNC_STORE_SETTER]` in dev (`solid2-kit check` flags it too).
+2.0.0-rc.9 it throws `[ASYNC_STORE_SETTER]` in dev (`solid2-kit check` flags it too). <!-- upstream:async-store-setter-throws -->
 Await outside, then write synchronously (inside an `action`, `yield` first):
 
 ```tsx
@@ -156,7 +156,7 @@ setProfile((draft) => { draft.name = name; });
 
 A signal may hold a promise, so `setSignal` has no such rule. A store setter called
 at component-body top level is a write in an owned scope — dev throws
-`[REACTIVE_WRITE_IN_OWNED_SCOPE]` (rc.9 closed the exemption store writes had) — so
+`[REACTIVE_WRITE_IN_OWNED_SCOPE]` (rc.9 closed the exemption store writes had) <!-- upstream:store-write-owned-scope --> — so
 seed the shape through the `createStore` argument or a derivation.
 
 **The store itself is read-only; only the draft writes.** An assignment or mutating
@@ -261,7 +261,7 @@ variable in JSX (`const View = tab() ? A : B` freezes the choice at setup).
 `<Dynamic component={...}>` is the same primitive with a worse shape (the tag travels
 in the props bag, so every instance merges and omits it and rebuilds a factory) and
 is **deprecated** since 2.0.0-rc.9 — `@deprecated` in the types, no runtime warning,
-still shipped in 2.0. Hoist a `dynamic()` per component instance (or per module for a
+still shipped in 2.0. <!-- upstream:dynamic-deprecated --> Hoist a `dynamic()` per component instance (or per module for a
 constant tag) instead.
 
 ### Two-phase effect (imperative boundary only)
@@ -435,7 +435,7 @@ return <StoryDetail story={story} />;
   `isPending(() => results())`). Freshest in-flight value for a preview:
   `latest(results)`. `latest` is not a null-safe probe: before the source's first value
   it throws `NotReadyError` in every scope (since 2.0.0-rc.9 also in event handlers and
-  imperative code, which used to receive `undefined`). A write is visible to `latest()` /
+  imperative code, which used to receive `undefined`) <!-- upstream:latest-throws-unsettled -->. A write is visible to `latest()` /
   `isPending()` only from the flush that carries it — `flush()` first when a test reads
   its own write through them. Do not start `fetch` at component-body top level.
 - Coordinate sibling `<Loading>` reveal with `<Reveal>` (`order="sequential"` default,
@@ -511,7 +511,7 @@ Uncaught errors (`REACTIVITY_HALTED`) go to the platform's `reportError`, which 
 monitor already listens on — do not report them twice. `renderToStream` /
 `renderToString`'s `onError` option *is* the per-render server hook: it now hears every
 handled failure, so filter on `context.handling === "failed"` when only request-failing
-errors matter (the rc.8 one-argument form keeps working).
+errors matter (the rc.8 one-argument form keeps working). <!-- upstream:render-onerror-handled -->
 
 ### Streams and subscriptions (websockets, reactive clients)
 
@@ -667,7 +667,7 @@ handler or the `action`.
 `createOptimistic(value)`) is a pure overlay: writes inside an action vanish when it
 settles, and writes outside an action do not stick. Copying the reference example
 `createOptimisticStore<Todo[]>([])` and writing the saved row after the `yield`
-leaves an empty list once the action settles, with no warning. Durable data comes
+leaves an empty list once the action settles, with no warning. <!-- upstream:optimistic-value-overlay --> Durable data comes
 from the function form — `createOptimisticStore(() => api.list(), [])` refreshed
 after the `yield`, or `createOptimisticStore(() => base.todos, [])` over a separate
 `createStore` that the action writes the confirmed value into. Keep the value form for
@@ -1043,7 +1043,7 @@ write and `flush()`: `const { setA, b, dispose } = createRoot((dispose) => { …
 { setA, b, dispose }; }); setA(2); flush();`. A hook that reads context runs under
 `renderHook(useCart, { wrapper: CartProvider })`. A routed component gets a router built in
 the test — `createRouter({ routes, history: memoryHistory("/orders/42") })` — because
-Testing Library's `render(…, { location })` is typed but not implemented (1.0.0-beta.3).
+Testing Library's `render(…, { location })` is typed but not implemented (1.0.0-beta.3). <!-- upstream:testing-library-location -->
 
 `jsxImportSource` for tests and app code is `"@solidjs/web"`, not `"solid-js"`.
 Vite plugin is `@solidjs/vite-plugin`, not `vite-plugin-solid`.
@@ -1070,14 +1070,14 @@ in observe and dev) and **checks** (dev-only guidance printed by the console rep
 Always-on dev checks include misplaced reads
 (`[STRICT_READ_UNTRACKED]`, `[PENDING_ASYNC_UNTRACKED_READ]`), misplaced writes
 (`[REACTIVE_WRITE_IN_OWNED_SCOPE]` — since rc.9 also for store setters called in a
-component or root body, `[ASYNC_STORE_SETTER]` for a store setter callback that returns
-a promise, `[FLUSH_IN_ACTION]`, `[SERVER_WRITE]`), and
+component or root body <!-- upstream:store-write-owned-scope -->, `[ASYNC_STORE_SETTER]` for a store setter callback that returns
+a promise <!-- upstream:async-store-setter-throws -->, `[FLUSH_IN_ACTION]`, `[SERVER_WRITE]`), and
 `[ASYNC_OUTSIDE_LOADING_BOUNDARY]` when a tracked read has no boundary above it.
 Each entry carries a stable `[CODE]`, what the runtime observed, and an owner chain
 (`in <App> › <Cart> › <LineItem>`); never silence a code before understanding it.
 Since rc.9 the server render reports on the same channel with the same owner chains:
 `[SSR_RENDER_ERROR_CONTAINED]` (a boundary routed a render error; `ownerPath` is where
-it was thrown, `boundaryPath` where it was met), `[SSR_ERROR_SANITIZED]` (the original
+it was thrown, `boundaryPath` where it was met) <!-- upstream:ssr-render-error-contained -->, `[SSR_ERROR_SANITIZED]` (the original
 behind a production-sanitized error), `[SSR_CLIENT_CONTENT_MASKED]` (client-only content
 that surfaced only after a real server wait — the wait was wasted), server-side
 `[ASYNC_WATERFALL]`, and `[REVEAL_IN_RENDER_TO_STRING]`.
@@ -1088,7 +1088,7 @@ code maps to what the runtime observed and what to change.
 Cost and responsiveness findings need the opt-in attribution engine, which records
 every scope that re-ran, what changed to cause it, and how long it took. Since
 `solid-js` 2.0.0-rc.8 the engine lives behind its own subpath — `DEV.attribution`
-no longer exists (it is a type error; `DEV` holds only devtools hooks, graph
+no longer exists <!-- upstream:dev-attribution-removed --> (it is a type error; `DEV` holds only devtools hooks, graph
 traversal, and console reporting). `OBSERVE` is the public observability surface on
 the observe and dev builds — `OBSERVE.records`, `OBSERVE.diagnostics`,
 `OBSERVE.exclude`, `OBSERVE.server.trace` are for app and tool code; only the
@@ -1096,7 +1096,7 @@ the observe and dev builds — `OBSERVE.records`, `OBSERVE.diagnostics`,
 to engines, routers, and devtools. Since 2.0.0-rc.9 the folds, queries, and
 formatters are **named exports** of that subpath, not methods of `attribution`
 (`attribution.why` / `.costs` / `.feedback` / `.subscriptions` / `.format` are type
-errors); `attribution` keeps `enable`, `disable`, `subscribe`, `markFlight`, and the
+errors) <!-- upstream:attribution-named-exports -->; `attribution` keeps `enable`, `disable`, `subscribe`, `markFlight`, and the
 record ring buffers (`history`, `holds`, `waterfalls`, `navigations`, `interactions`):
 
 ```ts
@@ -1303,7 +1303,7 @@ Solid Router 0.x/1.x stand-ins.** Patterns below; fetch the matching pages from
 ```
 
 `solid-js` does **not** export a `JSX` namespace — `import type { JSX } from "solid-js"`
-is a type error (TS2305). Markup types are `JSX.Element` from `@solidjs/web` (the
+is a type error (TS2305) <!-- upstream:jsx-namespace-absent -->. Markup types are `JSX.Element` from `@solidjs/web` (the
 docs' choice; it also admits DOM nodes) or the renderer-neutral `Element` from `solid-js`
 (`children?: Element`), alongside `Component` / `ParentProps` / `Accessor` / `Setter`.
 Import the latter as `import type { Element as SolidElement } from "solid-js"` in any file
@@ -1632,7 +1632,7 @@ response) close that loop. For 404 during SSR: `httpStatus(404)` from `@solidjs/
 on the server-function wire **and**, since 2.0.0-rc.9, on every SSR road a failure
 takes (an `<Errored>` fallback rendered on the server, a rejected async source
 serialized into the stream, a `<Loading>` fragment's rejection), so `err().message`
-in a fallback reads the generic message in a production server render. Use
+in a fallback reads the generic message in a production server render. <!-- upstream:ssr-error-sanitized --> Use
 `throw markSafeError(...)` or `throw respond(..., { status })` for intentional
 client-facing failures — a *returned* `respond()` resolves the call whatever its
 status, so `return respond({ error }, { status: 400 })` reads as success to the UI,
@@ -1643,7 +1643,8 @@ is success metadata a scripted caller unwraps. Arguments are JSON: send `Date` /
 argument travels natively). `enableRichArguments()` from
 `@solidjs/web/server-functions/rich-args` (at `src/App.tsx` module scope) lifts that, but
 in rc.9 importing it fails `vite build` (`"./client" is not exported` — the dev server
-works, so the break shows only at build).
+works, so the break shows only at build); `resolve: { dedupe: ["@solidjs/web"] }` in the
+Vite config works around it. <!-- upstream:rich-args-vite-build https://github.com/solidjs/solid/issues/3627 -->
 `GET()` is only for idempotent reads (URLs leak into logs/history);
 import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
 Reads are function calls too: `GET(async (id) => { "use server"; ... })` is invoked
@@ -1891,20 +1892,20 @@ how to reuse. Prefer the form on the right.
 | `submission.clear()` from an effect | on dismiss/resubmit only — from an effect, errors flash and vanish |
 | `revalidate(liveSource)` | `live()` updates through the open stream; do not revalidate it |
 | `refresh(user)` without `affects` when the reload should look pending | pair `affects(user)` with `refresh(user)` — a bare `refresh` re-asks quietly |
-| `<Dynamic component={tab() ? A : B} />` | `const View = dynamic(() => (tab() ? A : B))` — `<Dynamic>` is deprecated (rc.9); `dynamic()` hoists the factory and keeps identity stable |
-| `setStore(async (draft) => { draft.x = await load(); })` | `const x = await load(); setStore((draft) => { draft.x = x; })` — the setter is a synchronous transaction; dev throws `[ASYNC_STORE_SETTER]` |
-| `setStore((d) => { d.items = seed; })` in a component body | seed through `createStore(seed)` / `createStore(() => props.items, fallback)` — a body-level store write is `[REACTIVE_WRITE_IN_OWNED_SCOPE]` |
+| `<Dynamic component={tab() ? A : B} />` | `const View = dynamic(() => (tab() ? A : B))` — `<Dynamic>` is deprecated (rc.9); `dynamic()` hoists the factory and keeps identity stable <!-- upstream:dynamic-deprecated --> |
+| `setStore(async (draft) => { draft.x = await load(); })` | `const x = await load(); setStore((draft) => { draft.x = x; })` — the setter is a synchronous transaction; dev throws `[ASYNC_STORE_SETTER]` <!-- upstream:async-store-setter-throws --> |
+| `setStore((d) => { d.items = seed; })` in a component body | seed through `createStore(seed)` / `createStore(() => props.items, fallback)` — a body-level store write is `[REACTIVE_WRITE_IN_OWNED_SCOPE]` <!-- upstream:store-write-owned-scope --> |
 | `const saved = await api.save(); yield until(() => ...)` | `await api.save(); yield; yield until(() => ...)` — a bare `yield` re-enters the transaction before any reader is created, not only before writes |
 | `fallback={(err) => { captureException(err()); return <Fallback />; }}` | `configureClientErrors({ onError })` from `solid-js` (or per root `render(fn, root, undefined, { onError })`), `configureServerErrors({ onError })` from `@solidjs/web` — once per error, with `ownerPath` / `boundaryPath` |
-| `latest(user) ?? placeholder` in a handler as a null-safe read | `latest()` throws `NotReadyError` before the first value in every scope; read settled values under `<Loading>`, or `await until(() => user())` |
-| `attribution.why(total)` / `attribution.format(e)` / `attribution.costs()` | named imports from `solid-js/attribution`: `why(total)`, `formatRerun(e)`, `costs()`, `feedback()`, `subscriptions(scope)` (rc.9) |
+| `latest(user) ?? placeholder` in a handler as a null-safe read | `latest()` throws `NotReadyError` before the first value in every scope; read settled values under `<Loading>`, or `await until(() => user())` <!-- upstream:latest-throws-unsettled --> |
+| `attribution.why(total)` / `attribution.format(e)` / `attribution.costs()` | named imports from `solid-js/attribution`: `why(total)`, `formatRerun(e)`, `costs()`, `feedback()`, `subscriptions(scope)` (rc.9) <!-- upstream:attribution-named-exports --> |
 | `attribution.enable()` unguarded in app code, or `enable()` with the default `log: true` left on | `if (isDev) attribution.enable({ log: false })` — on the observe build an unguarded `enable()` records in production; prefer the `/__solid/diagnostics` session (`begin` enables, `end` disables) so app code carries nothing |
 | `solid({ observe: true })` added "to see diagnostics in dev" | `vite dev` is always the dev build; `observe: true` is the production-observability opt-in (observe condition + `componentNames` for `vite build`/preview) |
 | `configureServerErrors({ onError: (e) => { report(e); return e; } })` | return nothing or a reference (`new Error(\`ref ${id}\`)`) — the return value replaces the sanitized wire value; the error itself leaks message/stack/secrets |
 | `import "./instrument"` at the top of the server entry for a monitoring SDK | `start: { instrument: "./src/instrument.ts" }` — ESM hoists static imports in dependency order, so the entry's own deps load first |
 | Express/middleware injecting `traceparent` / trace headers into responses | the runtime carries a sampled or provided trace on `Server-Timing` + `<meta>`; forward downstream with `getTraceContext()?.entries`; SDKs use `OBSERVE?.server.trace.provide` |
 | `OBSERVE.records.subscribe("call", (e) => setStats(...))` | listeners run synchronously inside the runtime and must not write signals; collect into a plain buffer and drain from outside |
-| `import { storePath } from "solid-js"` | gone from `solid-js` (rc.9); write draft setters `setState((d) => { d.user.name = "Grace"; })` |
+| `import { storePath } from "solid-js"` | gone from `solid-js` (rc.9); write draft setters `setState((d) => { d.user.name = "Grace"; })` <!-- upstream:store-path-removed --> |
 | `<meta name="description" content="...">` hardcoded in the document shell | `<Meta>` from `@solidjs/meta`. A static `<title>` is the fallback; other hardcoded tags coexist with the registry |
 | `useHead({ tag: "meta", ... })` for ordinary page tags | `<Title>` / `<Meta>` / `<Script>` (JSON-LD). `useHead` is the lower-level registry |
 | two `<Meta property="og:image">` meant as one replacement set | wrap them in `<Head>` — a later group replaces the earlier set as one unit |
@@ -1919,11 +1920,11 @@ how to reuse. Prefer the form on the right.
 | `<input type="checkbox" value={on()} />` | `checked={on()}` for the toggle; `value="string"` only when grouping radios or listing submitted values |
 | `createMemo(() => { void save(); return x(); })` / an effect that calls an action | invoke actions from handlers, not from memos or effects |
 | `createSignal(props.value)` / `createStore(props.items)` | `createSignal(() => props.value)` / `createStore(() => props.items, fallback)` — a bare `props.x` at setup is a snapshot. That form resets on every prop change; an intentional one-time read (an `initialCount` prop) is `createSignal(untrack(() => props.initialCount))` |
-| `createRenderEffect` / `createTrackedEffect` as the default effect | two-phase `createEffect(compute, apply)`; `createTrackedEffect` is `@deprecated` (rc.9) |
+| `createRenderEffect` / `createTrackedEffect` as the default effect | two-phase `createEffect(compute, apply)`; `createTrackedEffect` is `@deprecated` (rc.9) <!-- upstream:tracked-effect-deprecated --> |
 | `createEffect(() => source(), () => setError(null))` to reset a signal | `createSignal(() => { source(); return null; })` — the writable derivation resets on change; a sole-setter apply is rule 4 |
 | a "server-safe" initial value adopted after mount (React hydration-mismatch fix) | client mode mounts with `render()` into an empty body — no hydration, no mismatch; read `localStorage` / `matchMedia` directly at signal creation |
 | rewrite `App.tsx` with loading/error branches, or snapshot/restore, when the list moves to the server | same `setTodos`; wrap mutations in `action`; swap in function-form `createOptimisticStore(() => api.list(), [])` + a server-functions file. The overlay is discarded; the confirmed store is the truth |
-| `createOptimisticStore<Todo[]>([])` holding the list, saved rows written after `yield` | `createOptimisticStore(() => api.list(), [])` + `refresh(todos)` (or a function form over a separate `createStore`) — the value form is a pure overlay: action writes vanish on settle |
+| `createOptimisticStore<Todo[]>([])` holding the list, saved rows written after `yield` | `createOptimisticStore(() => api.list(), [])` + `refresh(todos)` (or a function form over a separate `createStore`) — the value form is a pure overlay: action writes vanish on settle <!-- upstream:optimistic-value-overlay --> |
 | disable an optimistic row until ack, or mutex rapid clicks / freeze unrelated writes | keep the control enabled; `action` is the transaction. An in-flight action does not freeze other writes. Failed-action replay is optional |
 | tRPC / RPC type-gen around `"use server"` | TypeScript does not cross HTTP — validate inside the function. Locals only the body reads (db, secrets) stay off the client |
 | `src/routes/api/todos.ts` (or a Next `route.ts`) wrapping `db.todos.insert` | `"use server"` *is* the RPC. API routes are for real HTTP endpoints (webhooks), not the app's own mutations |
@@ -2111,7 +2112,8 @@ always-applied rules installed alongside this skill.
       cleanup or nothing.
 - [ ] Dev console shows no diagnostics: reads in tracking scopes (no
       `[STRICT_READ_UNTRACKED]`), store setters synchronous and never called at
-      body level (no `[ASYNC_STORE_SETTER]` / `[REACTIVE_WRITE_IN_OWNED_SCOPE]`), held
+      body level (no `[ASYNC_STORE_SETTER]` <!-- upstream:async-store-setter-throws --> /
+      `[REACTIVE_WRITE_IN_OWNED_SCOPE]` <!-- upstream:store-write-owned-scope -->), held
       writes paired with `isPending` / `latest` / optimistic values / `affects()`
       (no `[SILENT_HOLD]`). Attribution-only costs
       (`[IMMUTABLE_UPDATE_IN_STORE]`, `[UNSTABLE_LIST_IDENTITY]`, `[EFFECT_*]`)

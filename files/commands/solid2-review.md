@@ -39,7 +39,7 @@ Steps:
    - app-wide state as a module-level signal/store instead of a provider at the root
      of `App` (shared across SSR requests);
    - value-form `createOptimisticStore([])` / `createOptimistic(v)` holding durable
-     data (writes vanish on settle) instead of the function form refreshed after `yield`;
+     data (writes vanish on settle) <!-- upstream:optimistic-value-overlay --> instead of the function form refreshed after `yield`;
    - route `preload` returning data read as `props.data` (captured once per match)
      instead of `void getX(params.id)` + `createMemo(() => getX(props.params.id))`;
    - `throw redirect()` / `return reload()` in server functions called without Solid
@@ -50,8 +50,9 @@ Steps:
      `configureClientErrors` / `configureServerErrors` / `render(fn, root, undefined, { onError })`
      (options are `render`'s 4th argument — a 3rd-argument object is `init`);
    - store setter callbacks that `await` (the draft closes when the callback returns —
-     `[ASYNC_STORE_SETTER]`), store setters called at component-body top level, and
-     `latest()` used as a null-safe read of an unsettled source;
+     `[ASYNC_STORE_SETTER]` <!-- upstream:async-store-setter-throws -->), store setters called at
+     component-body top level <!-- upstream:store-write-owned-scope -->, and `latest()` used as a
+     null-safe read of an unsettled source <!-- upstream:latest-throws-unsettled -->;
    - nested fetches assumed to waterfall, or `<Loading>` lifted along with a lifted fetch;
    - mutations on a value read through `live()` that settle on `yield save()` alone or
      `refresh()` the live-derived store, instead of `yield until(predicate, { timeout })`
