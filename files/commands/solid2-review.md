@@ -39,7 +39,7 @@ Steps:
    - app-wide state as a module-level signal/store instead of a provider at the root
      of `App` (shared across SSR requests);
    - value-form `createOptimisticStore([])` / `createOptimistic(v)` holding durable
-     data (writes vanish on settle) instead of the function form refreshed after `yield`;
+     data (writes vanish on settle) <!-- upstream:optimistic-value-overlay --> instead of the function form refreshed after `yield`;
    - route `preload` returning data read as `props.data` (captured once per match)
      instead of `void getX(params.id)` + `createMemo(() => getX(props.params.id))`;
    - `throw redirect()` / `return reload()` in server functions called without Solid

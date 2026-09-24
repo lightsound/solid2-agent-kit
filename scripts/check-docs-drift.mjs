@@ -3,12 +3,15 @@
 // exists in the official documentation corpus (llms-full.txt). Solid 2.0 is
 // young; if the docs rename or remove an API, this check fails so the kit
 // content gets updated instead of teaching agents stale names.
+// It also checks, offline and first, that every <!-- upstream:<id> --> marker in
+// files/ has a probe in scripts/upstream-probes/probes/ and vice versa.
 //
 // Run: node scripts/check-docs-drift.mjs (also run weekly by CI)
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyMarkers } from './upstream-probes/registry.mjs';
 
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const CORPUS_URL = 'https://v2-rebuild--solid-docs-v2.netlify.app/llms-full.txt';
@@ -153,6 +156,14 @@ function extractCreateApis() {
   }
   return [...found].sort();
 }
+
+const upstream = await verifyMarkers();
+if (upstream.problems.length > 0) {
+  console.error('docs-drift — upstream markers and probes are out of sync:');
+  for (const problem of upstream.problems) console.error(`  - ${problem}`);
+  process.exit(1);
+}
+console.log(`docs-drift — OK: ${upstream.markers.length} upstream markers, ${upstream.probes.length} probes, all paired.`);
 
 const response = await fetch(CORPUS_URL);
 if (!response.ok) {
