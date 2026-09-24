@@ -50,7 +50,10 @@ jobs:
         run: |
           set +e
           node scripts/check-upstream.mjs --json upstream-report.json --markdown upstream-report.md
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          code=$?
+          # Findings always come with a report; without one the run did not get that far.
+          if [ "$code" = 1 ] && [ ! -f upstream-report.json ]; then code=2; fi
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
       # One open issue labeled upstream-watch at a time: created on the first
       # finding, rewritten (plus a comment, so watchers are notified) when the
       # findings change, closed on the first clean run.
@@ -69,9 +72,14 @@ jobs:
             if [ -z "$number" ]; then
               gh label create "$label" --color d93f0b --description "A Solid 2 claim the kit documents changed upstream" 2>/dev/null || true
               gh issue create --title "Upstream watch: Solid 2 changed a claim the kit documents" --label "$label" --body-file upstream-report.md
-            elif ! gh issue view "$number" --json body --jq .body | grep -q "fingerprint=$fingerprint"; then
-              gh issue edit "$number" --body-file upstream-report.md
-              gh issue comment "$number" --body "The findings changed; the description is updated. Run: $RUN_URL"
+            else
+              # A separate assignment so a failed read fails the step instead of
+              # looking like changed findings.
+              body=$(gh issue view "$number" --json body --jq .body)
+              if ! printf '%s' "$body" | grep -q "fingerprint=$fingerprint"; then
+                gh issue edit "$number" --body-file upstream-report.md
+                gh issue comment "$number" --body "The findings changed; the description is updated. Run: $RUN_URL"
+              fi
             fi
           elif [ -n "$number" ]; then
             gh issue close "$number" --comment "Every marked claim reproduces and all watched packages are at baseline. Run: $RUN_URL"
