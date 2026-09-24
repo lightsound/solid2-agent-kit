@@ -10,6 +10,7 @@ on:
     paths:
       - scripts/check-upstream.mjs
       - scripts/upstream-probes/**
+      - .github/workflows/upstream-watch.yml
 
 permissions:
   contents: read
@@ -33,8 +34,14 @@ jobs:
     permissions:
       contents: read
       issues: write
+    # Overlapping schedule and manual runs would each see no open issue and create one.
+    concurrency: upstream-watch
     steps:
+      # The probes execute freshly published package code; keep the issues:write
+      # token out of .git/config so only the issue step (GH_TOKEN) holds it.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 26
