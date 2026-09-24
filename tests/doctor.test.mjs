@@ -270,6 +270,10 @@ if (
 ) {
   fail('expected the web-version finding to name the resolved rc and the baseline range to install', staleWeb);
 }
+const lowFloorWeb = lineRun('@solidjs/web', '^2.0.0-rc.0', '2.0.0-rc.9');
+if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "^2.0.0-rc.0" — allows releases older than 2.0.0-rc.9')) {
+  fail('expected a declared range below the baseline to be reported as allowing older releases', lowFloorWeb);
+}
 
 // Bare-major ranges ("^1", "~0") name the 1.x line without a minor.
 const bareMajor = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-major-'));

@@ -1271,13 +1271,16 @@ const VERSION_CHECKED = [...new Set([...SOLID2_LINE_PACKAGES.map((p) => p.name),
 // unions and protocol specs have no bound to read; their install is checked.
 const LOWER_BOUND = /^\s*(?:[\^~]|>=|=)?\s*v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\s*$/;
 
-function versionProblem(name, version) {
+// `declared` ranges are judged by their floor: npm installs the `latest` tag
+// whenever it satisfies the range, so "^2.0.0-rc.0" resolves to rc.0 today.
+function versionProblem(name, version, declared) {
   const line = SOLID2_LINE_PACKAGES.find((p) => p.name === name);
   if (line?.solid1.test(version)) return `the Solid 1.x line; this kit teaches Solid 2.x. ${line.fix}`;
   const baseline = BASELINE[name]?.baseline;
   const lowest = version.match(LOWER_BOUND)?.[1];
   if (baseline && lowest && compareVersions(lowest, baseline) < 0) {
-    return `older than ${baseline}, the release this kit's guidance is verified against (npm dist-tags lag on the Solid 2 prereleases, so a bare install can resolve an older one). Install ${name}@^${baseline}.`;
+    const older = declared ? 'allows releases older than' : 'older than';
+    return `${older} ${baseline}, the release this kit's guidance is verified against (npm dist-tags lag on the Solid 2 prereleases, so a bare install can resolve an older one). Install ${name}@^${baseline}.`;
   }
   return null;
 }
@@ -1310,14 +1313,14 @@ function doctorFindings(target) {
     const id = SOLID2_LINE_PACKAGES.find((p) => p.name === name)?.id ?? `${name.replace('@solidjs/', '')}-version`;
     const range = deps[name];
     if (typeof range !== 'string') continue;
-    const declared = versionProblem(name, range);
+    const declared = versionProblem(name, range, true);
     if (declared) {
       report(id, `package.json pins ${name} "${range}" — ${declared}`);
       continue;
     }
     // A range such as "latest" or "*" only shows its version once resolved.
     const installed = installedVersion(target, name);
-    const resolved = installed && versionProblem(name, installed);
+    const resolved = installed && versionProblem(name, installed, false);
     if (resolved) report(id, `node_modules has ${name} ${installed} (package.json: "${range}") — ${resolved}`);
   }
 
