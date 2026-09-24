@@ -38,3 +38,11 @@ How this repository's owner works with agents. Portable: nothing here depends on
 - When the work is done, open the PR as ready for review, not as a draft, and address review-bot findings.
 - Do not create or update `README.md` unless the user explicitly asks.
 <!-- agent-rules:end -->
+
+# solid2-agent-kit
+
+## Version-specific claims in `files/`
+
+- A claim in `files/` that holds only for the Solid versions the kit was verified against (an rc deprecation or removal, a dev-only throw, an upstream bug or its workaround, a docs-vs-implementation mismatch) gets an inline marker at every place it is stated: `<!-- upstream:<id> -->`, or `<!-- upstream:<id> <issue-url> -->` when an upstream issue tracks it.
+- Each `<id>` has exactly one probe, `scripts/upstream-probes/probes/<id>.mjs` (`claim`, `packages`, optional `issue`, `probe(h)` returning `{ reproduces, observed }`); `npm run check:drift` fails when markers and probes are unpaired.
+- `npm run check:upstream -- --versions baseline` must pass for a new probe; `npm run check:upstream` runs every probe on the newest dist-tagged prereleases. `.github/workflows/upstream-watch.yml` runs it weekly and keeps one `upstream-watch` issue open while a claim changed or a watched package moved past `baseline` in `scripts/upstream-probes/registry.mjs`.
