@@ -1641,7 +1641,8 @@ is success metadata a scripted caller unwraps. Arguments are JSON: send `Date` /
 argument travels natively). `enableRichArguments()` from
 `@solidjs/web/server-functions/rich-args` (at `src/App.tsx` module scope) lifts that, but
 in rc.9 importing it fails `vite build` (`"./client" is not exported` — the dev server
-works, so the break shows only at build). <!-- upstream:rich-args-vite-build https://github.com/solidjs/solid/issues/3627 -->
+works, so the break shows only at build); `resolve: { dedupe: ["@solidjs/web"] }` in the
+Vite config works around it. <!-- upstream:rich-args-vite-build https://github.com/solidjs/solid/issues/3627 -->
 `GET()` is only for idempotent reads (URLs leak into logs/history);
 import it from `@solidjs/web/server-functions`, never `@solidjs/start`.
 Reads are function calls too: `GET(async (id) => { "use server"; ... })` is invoked
