@@ -14,7 +14,7 @@ export async function probe(h) {
      const contexts = [];
      renderToString(app, { onError: (error, context) => { contexts.push(context ?? null); } });
      let oneArgument = 0;
-     renderToString(app, { onError: (error) => { oneArgument++; } });
+     renderToString(app, { onError: (error) => { if (error?.message === "boom") oneArgument++; } });
      console.log(JSON.stringify({ contexts, oneArgument }));`,
   );
   const handled = r.contexts.some((c) => c?.kind === 'render' && c?.handling === 'fallback');
