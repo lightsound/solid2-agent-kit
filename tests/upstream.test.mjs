@@ -2,7 +2,7 @@
 // Tests for check:upstream's version selection: semver prerelease precedence
 // (it decides "newer than baseline") and the in-major pick over dist-tags.
 
-import { compareVersions, newestOnLine } from '../scripts/upstream-probes/versions.mjs';
+import { compareVersions, newestOnLine, parseVersion } from '../scripts/upstream-probes/versions.mjs';
 import { WATCHED } from '../scripts/upstream-probes/registry.mjs';
 
 const failures = [];
@@ -36,6 +36,7 @@ const snapshot = [
   ['solid-js', 2, { beta: '1.10.0-beta.0', latest: '1.9.15', next: '2.0.0-rc.9' }, '2.0.0-rc.9'],
   ['@solidjs/web', 2, { latest: '2.0.0-rc.0', next: '2.0.0-rc.9' }, '2.0.0-rc.9'],
   ['@solidjs/signals', 2, { latest: '2.0.0-rc.0', next: '2.0.0-rc.9' }, '2.0.0-rc.9'],
+  ['@solidjs/diagnostics', 2, { latest: '2.0.0-rc.2', next: '2.0.0-rc.9' }, '2.0.0-rc.9'],
   ['@solidjs/router', 2, { beta: '0.10.0-beta.9', latest: '1.0.0', next: '2.0.0-next.27' }, '2.0.0-next.27'],
   ['@solidjs/vite-plugin', 3, { next: '3.0.0-next.35', latest: '3.0.0-next.44' }, '3.0.0-next.44'],
   ['@solidjs/testing-library', 1, { latest: '0.8.10', next: '1.0.0-beta.3' }, '1.0.0-beta.3'],
@@ -47,6 +48,9 @@ for (const [name, line, tags, want] of snapshot) {
 for (const name of Object.keys(WATCHED)) {
   if (!snapshot.some(([n, line]) => n === name && line === WATCHED[name].line)) {
     failures.push(`${name} (line ${WATCHED[name].line}) is watched but not in the dist-tag snapshot`);
+  }
+  if (parseVersion(WATCHED[name].baseline).core[0] !== WATCHED[name].line) {
+    failures.push(`${name}: baseline ${WATCHED[name].baseline} is not on line ${WATCHED[name].line}`);
   }
 }
 if (newestOnLine({ latest: '1.9.15' }, 2) !== null) failures.push('newestOnLine must return null when no tag is on the line');

@@ -165,7 +165,7 @@ function markdown() {
   lines.push(
     '',
     'To resolve: update or remove the marked text (and its probe) for each changed claim, re-verify with',
-    '`npm run check:upstream`, then move `baseline` in `scripts/upstream-probes/registry.mjs` to the tested versions.',
+    '`npm run check:upstream`, then move `baseline` in `bin/baseline.mjs` to the tested versions.',
     'This issue closes itself on the first clean run.',
   );
   return lines.join('\n');

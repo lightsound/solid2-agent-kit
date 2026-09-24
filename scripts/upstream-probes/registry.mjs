@@ -12,22 +12,15 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { BASELINE as WATCHED } from '../../bin/baseline.mjs';
 
 export const KIT_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const PROBES_DIR = fileURLToPath(new URL('./probes', import.meta.url));
 
-// Packages whose releases can make a marked claim stale. `line` is the major
-// the kit targets: the newest dist-tagged version on that major is what
-// check:upstream installs. `baseline` is the version every probe was verified
-// against — bump it (and fix any marked claim that changed) after re-verifying.
-export const WATCHED = {
-  'solid-js': { line: 2, baseline: '2.0.0-rc.9' },
-  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.9' },
-  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.9' },
-  '@solidjs/router': { line: 2, baseline: '2.0.0-next.27' },
-  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.44' },
-  '@solidjs/testing-library': { line: 1, baseline: '1.0.0-beta.3' },
-};
+// Packages whose releases can make a marked claim stale, with the baseline
+// versions the probes were verified against. The table ships with the CLI
+// (bin/baseline.mjs) so `doctor` flags projects older than the same baseline.
+export { WATCHED };
 
 // Tools the probes drive, not packages under watch. TypeScript stays on 6.x:
 // 7.x ships the native compiler without the JS API the type probes use.
