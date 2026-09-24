@@ -1221,9 +1221,10 @@ const BANNED_DEPS = {
 };
 
 // Packages whose npm `latest` dist-tag is still the Solid 1.x line (solid-js
-// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29, @tanstack/solid-router 1.x):
-// a bare `pnpm add <name>` installs it. The Solid 2 releases are published
-// under `next` (TanStack: `rc`, 2.0.0-rc.x).
+// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29, @solidjs/testing-library 0.8,
+// @tanstack/solid-router 1.x, @tanstack/solid-query 5.x): a bare
+// `pnpm add <name>` installs it. The Solid 2 releases are published under
+// `next` (TanStack: `rc` — solid-router 2.0.0-rc.x, solid-query 6.0.0-rc.x).
 const SOLID2_LINE_PACKAGES = [
   { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01](?:\.|$)/, fix: 'Install solid-js@next (^2).' },
   {
@@ -1243,6 +1244,18 @@ const SOLID2_LINE_PACKAGES = [
     id: 'tanstack-router-version',
     solid1: /^[\s^~=v]*[01](?:\.|$)/,
     fix: 'TanStack Router 1.x has a solid-js ^1.9 peer; install @tanstack/solid-router@rc (2.x, solid-js 2 peer).',
+  },
+  {
+    name: '@tanstack/solid-query',
+    id: 'tanstack-query-version',
+    solid1: /^[\s^~=v]*[0-5](?:\.|$)/,
+    fix: 'TanStack Query 5.x has a solid-js ^1.6 peer; install @tanstack/solid-query@rc (6.x, solid-js 2 peer).',
+  },
+  {
+    name: '@solidjs/testing-library',
+    id: 'testing-library-version',
+    solid1: /^[\s^~=v]*0(?:\.|$)/,
+    fix: 'Testing Library 0.x renders through solid-js/web (Solid 1); install @solidjs/testing-library@next (1.x, solid-js 2 peer).',
   },
 ];
 

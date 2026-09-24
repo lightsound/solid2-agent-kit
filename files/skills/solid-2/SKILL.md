@@ -650,7 +650,8 @@ file of server functions. Do not rewrite `App.tsx` with loading/error branches,
 and do not snapshot-the-cache / write-a-prediction / restore-on-error. A cache
 library is not the productionizing step — the sync mutation already was the
 prediction. (Router `query` or `@tanstack/solid-query` remain valid when the
-project already uses them; they are not required to "make it real".)
+project already uses them; they are not required to "make it real". Solid 2's
+TanStack Query is `@tanstack/solid-query@rc` (6.x) — npm `latest` is the Solid 1 5.x line.)
 Optimistic rows stay interactive — a not-yet-acked todo can still
 be toggled. Do not disable the control until confirmation, and do not mutex
 rapid clicks; `action` is the transaction (no half-mutation, no interleaved
@@ -1016,7 +1017,8 @@ writes from owned scopes, and async reads outside `<Loading>`. Fix them; don't s
 A read at component-body top level reports `[STRICT_READ_UNTRACKED]` naming the
 component — move the read into JSX, a memo, or an effect compute.
 
-Component tests use `@solidjs/testing-library`. Pass a **function** to `render` so
+Component tests use `@solidjs/testing-library@next` (1.x; npm `latest` is the Solid 1
+0.8 line). Pass a **function** to `render` so
 the tree has an owner, and `flush()` after interactions that stage writes:
 
 ```tsx
