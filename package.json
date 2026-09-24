@@ -17,7 +17,7 @@
   "scripts": {
     "check:drift": "node scripts/check-docs-drift.mjs",
     "check:upstream": "node scripts/check-upstream.mjs",
-    "test": "node tests/check.test.mjs && node tests/hook.test.mjs && node tests/doctor.test.mjs && node tests/init.test.mjs"
+    "test": "node tests/check.test.mjs && node tests/hook.test.mjs && node tests/doctor.test.mjs && node tests/init.test.mjs && node tests/upstream.test.mjs"
   },
   "engines": {
     "node": ">=18"

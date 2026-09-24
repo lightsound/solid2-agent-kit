@@ -21,6 +21,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHarness } from './upstream-probes/harness.mjs';
 import { TOOLING, WATCHED, verifyMarkers } from './upstream-probes/registry.mjs';
+import { compareVersions, newestOnLine } from './upstream-probes/versions.mjs';
 
 const REPO_BLOB = 'https://github.com/lightsound/solid2-agent-kit/blob/main';
 const REGISTRY = (process.env.npm_config_registry || 'https://registry.npmjs.org').replace(/\/$/, '');
@@ -41,6 +42,9 @@ function fail(message) {
   process.exit(2);
 }
 
+// Exit 1 means findings; a crash (a registry or network error included) must not read as one.
+process.on('uncaughtException', (error) => fail(`unexpected error: ${error?.stack ?? error}`));
+
 if (!['latest', 'baseline'].includes(args.versions)) fail(`--versions must be "latest" or "baseline", got "${args.versions}"`);
 
 const { markers, probes: allProbes, problems } = await verifyMarkers();
@@ -49,36 +53,13 @@ const only = args.only ? new Set(args.only.split(',')) : null;
 const probes = only ? allProbes.filter((p) => only.has(p.id)) : allProbes;
 if (only && probes.length !== only.size) fail(`unknown probe id in --only ${args.only}`);
 
-function parseVersion(version) {
-  const [core, pre] = version.split('+')[0].split(/-(.*)/s);
-  return { core: core.split('.').map(Number), pre: pre ? pre.split('.') : [] };
-}
-
-// Semver precedence, prerelease-aware (2.0.0-rc.10 > 2.0.0-rc.9 < 2.0.0).
-function compareVersions(a, b) {
-  const x = parseVersion(a);
-  const y = parseVersion(b);
-  for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i] - y.core[i];
-  if (!x.pre.length || !y.pre.length) return y.pre.length - x.pre.length;
-  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
-    const [p, q] = [x.pre[i], y.pre[i]];
-    if (p === undefined || q === undefined) return p === undefined ? -1 : 1;
-    const numeric = /^\d+$/.test(p) && /^\d+$/.test(q);
-    if (p !== q) return numeric ? Number(p) - Number(q) : /^\d+$/.test(p) ? -1 : /^\d+$/.test(q) ? 1 : p < q ? -1 : 1;
-  }
-  return 0;
-}
-
-// The newest version any dist-tag points at on the watched major. Dist-tags,
-// not the full version list: they are the publisher's intent (`next` / `rc`),
-// and they lag each other (@solidjs/vite-plugin's `latest` is ahead of `next`).
 async function newestTagged(name, line) {
   const response = await fetch(`${REGISTRY}/-/package/${name.replace('/', '%2f')}/dist-tags`);
   if (!response.ok) fail(`failed to read dist-tags of ${name}: ${response.status}`);
   const tags = await response.json();
-  const candidates = Object.values(tags).filter((v) => parseVersion(v).core[0] === line);
-  if (candidates.length === 0) fail(`no dist-tag of ${name} points at a ${line}.x version: ${JSON.stringify(tags)}`);
-  return candidates.sort(compareVersions).at(-1);
+  const newest = newestOnLine(tags, line);
+  if (!newest) fail(`no dist-tag of ${name} points at a ${line}.x version: ${JSON.stringify(tags)}`);
+  return newest;
 }
 
 function install(versions) {
