@@ -125,14 +125,18 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     must `refresh()` that source — type that prop `SourceAccessor<User>` (`Accessor<User>`
     is TS2345 at `refresh`) — `isPending(() => props.user)` works on the
     value. Read every reactive input **before the first
-    `await`** — post-`await` reads do not subscribe, and in production the computation can
+    `await`** — post-`await` reads do not subscribe (dev reports `[UNTRACKED_READ_AFTER_AWAIT]`
+    on V8 engines), and in production the computation can
     sit pending with no retry. No `useEffect` + `setState` fetching, no `createResource`.
     `<Loading>` wraps the data slot, not page chrome. After first paint it keeps content
-    during refetch (`isPending` for the indicator). Use `on={id()}` (the *value*, not the
-    accessor) only when that identity change should show the fallback again. `on` compares
-    with `!==` (several keys: one string such as `` `${a()}/${b()}` ``, never a fresh array)
-    and takes effect only when no reader outside the boundary waits on the same write
-    (that is how one slow panel stops holding the page). Do not start `fetch` (or any request) at component-body top
+    during refetch (`isPending` for the indicator). Add `on={id()}` (a tracked *read*, not
+    the accessor `on={id}`) only when that change of subject should show the fallback again.
+    `on` is a dependency list, not a compared key: its value is irrelevant, a change to
+    anything it reads re-arms the boundary (several inputs: `on={[a(), b()]}`), and the
+    fallback lands with the frame of the change that caused it. <!-- upstream:loading-on-dependency-list -->
+    It can never show while the same data is also read outside the boundary (dev reports
+    `[LOADING_ON_OUTSIDE_HOLD]`) — move that read under the boundary so one hold owns the
+    data; that is how one slow panel stops holding the page. Do not start `fetch` (or any request) at component-body top
     level — that runs once at mount and is not a reactive source. Do not `try/catch` `NotReadyError` around a read, and do not
     use `loadingValue` / `seedLoadingValue` as the default first-flight UI — those skip
     `<Loading>`. `{latest(() => x())}` is a preview, not the visible answer, and not a
@@ -323,9 +327,10 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     render. `NoHydration` / `Hydration` split hydration *ownership*; they do not choose
     visible content — `clientOnly` is for components that must never run on the server.
     A single browser-only *value* takes `ssrSource` on the memo/signal/derived store
-    (`"client"` skips the server value and computes after hydration, e.g. `localStorage`;
-    `"hybrid"` re-runs after adopting the serialized value, e.g. window size mixed with
-    server data) — do not split a component via `clientOnly` for one value. An
+    (`"client"` skips the server value and computes after hydration, e.g. `localStorage`,
+    or server data mixed with the window size; `"hybrid"` adopts the serialized value and
+    then continues an async-iterable source on the client — for a sync or promise compute
+    it is identical to `"server"`, no re-run <!-- upstream:ssr-source-hybrid-stream -->) — do not split a component via `clientOnly` for one value. An
     `onSettled` fill-in remains a valid alternative.
     Pass a **function** to `render` / `hydrate` / `renderToString` / `renderToStream`
     (`render(() => <App />, root)`), never `render(<App />, root)`. `hydrate` when the
@@ -348,7 +353,8 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     link previews) takes `{ deferStream: true }` on its memo; keep the boundary. `pipe` / `pipeTo` / `readable` each consume
     a stream render — use exactly one. `createRoot` is for tests, libraries, and
     non-render entry points; inside a component let `render` / the component owner
-    own the scope. Async reads inside `<Portal>` start on the client — hoist the
+    own the scope (a root created under an owner is disposed with it — detach on purpose
+    with `runWithOwner(null, () => createRoot(...))`). Async reads inside `<Portal>` start on the client — hoist the
     read above the portal. Navigation-shaped updates (a setter, then async computeds holding previous values)
     do not need core `action` — reach for it only when writes happen *after* async work.
     Invoke actions from handlers, not from memos or effects.
@@ -437,9 +443,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     experimental `serverFunctions.components` flag. Server-function arguments are JSON:
     send `Date` / `Map` / `Set` as ISO strings / arrays (they throw otherwise; one `File` /
     `Blob` / `FormData` argument travels natively). `enableRichArguments()` from
-    `@solidjs/web/server-functions/rich-args` (at `src/App.tsx` module scope) lifts that,
-    but in rc.9 importing it fails `vite build` (`"./client" is not exported`) <!-- upstream:rich-args-vite-build https://github.com/solidjs/solid/issues/3627 -->. Declare live reads as `live(GET(fn))` —
-    `live()` outermost. A plain `async function*` server function is an event stream on
+    `@solidjs/web/server-functions/rich-args` (at `src/App.tsx` module scope) lifts that
+    (its import builds cleanly since 2.0.0-rc.10 — a `resolve.dedupe: ["@solidjs/web"]`
+    workaround left from rc.9 is no longer needed) <!-- upstream:rich-args-vite-build https://github.com/solidjs/solid/issues/3627 -->. Declare live reads as `live(GET(fn))` —
+    `live()` outermost; an undeclared async iterable still producing while a document
+    renders is `[SSR_UNDECLARED_LIVE_SOURCE]` in dev. A plain `async function*` server function is an event stream on
     one connection (no reconnect when it drops); `live()` is one value that changes over
     time and reconnects. `live()` connection state is
     `source.onstatus` (`"connected"` / `"reconnecting"` / `"closed"`), never a

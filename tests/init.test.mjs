@@ -147,7 +147,7 @@ writeFileSync(join(customTarget, 'node_modules/solid2-agent-kit/bin/solid2-kit.m
 writeFileSync(
   join(customTarget, 'package.json'),
   JSON.stringify(
-    { scripts: { 'lint:solid': 'my custom gate' }, devDependencies: { '@solidjs/diagnostics': '^2.0.0-rc.9' } },
+    { scripts: { 'lint:solid': 'my custom gate' }, devDependencies: { '@solidjs/diagnostics': '^2.0.0-rc.13' } },
     null,
     2,
   ),

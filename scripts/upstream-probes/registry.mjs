@@ -1,5 +1,5 @@
 // Upstream-claim registry: the kit content (files/) states some Solid 2 behavior
-// that holds only for the versions it was verified against — rc.9 deprecations,
+// that holds only for the versions it was verified against — rc deprecations,
 // dev-only throws, upstream bugs, docs-vs-implementation mismatches. Each such
 // claim carries an inline marker next to it:
 //

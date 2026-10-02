@@ -68,6 +68,9 @@ function Mapped(props: { label: string }) {
       ))}
       <For each={items().map((x) => x)}>{(x) => <li>{x}</li>}</For>
       <input {...rest} />
+      <Loading fallback={<li>Loading…</li>} on={items}>
+        <li>{items().length}</li>
+      </Loading>
       <div dangerouslySetInnerHTML={{ __html: '<p>x</p>' }} />
     </ul>
   );
