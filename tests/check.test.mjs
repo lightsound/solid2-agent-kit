@@ -62,6 +62,7 @@ const expected = [
   'react-dom-event',
   'history-nav',
   'pending-accessor-call',
+  'loading-on-accessor',
   'dynamic-jsx',
   'jsx-namespace-import',
   'effect-sync-signal',

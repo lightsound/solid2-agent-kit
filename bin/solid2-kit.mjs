@@ -480,6 +480,29 @@ function reactKeyPropFindings(content) {
 // reads it from package.json / node_modules.
 const TANSTACK_ROUTER_MODULE = /^@tanstack\/(?:solid-router|router-core)$/;
 
+// `<Loading on={id}>` hands the boundary an accessor: `on` is a tracked
+// expression whose value is irrelevant, so a bare accessor is never read and
+// the boundary never re-arms. `on={id()}`, `on={props.id}` and
+// `on={[a(), b()]}` do not match. The opening tag is scanned to its own `>`
+// (braces balanced) so a `fallback={<p>…</p>}` before `on` does not end it.
+function loadingOnAccessorFindings(content) {
+  const matches = [];
+  for (const tag of content.matchAll(/<Loading\b/g)) {
+    let index = tag.index + tag[0].length;
+    let depth = 0;
+    while (index < content.length) {
+      const ch = content[index];
+      if (ch === '{') depth += 1;
+      else if (ch === '}') depth -= 1;
+      else if (ch === '>' && depth === 0) break;
+      index += 1;
+    }
+    const bare = content.slice(tag.index, index).match(/\son=\{\s*[A-Za-z_$][\w$]*\s*\}/);
+    if (bare) matches.push({ index: tag.index + bare.index });
+  }
+  return matches;
+}
+
 // Local names bound by `import [Default,] { a, b as c } from "<module>"`.
 function importedNames(content, moduleName) {
   const names = new Set();
@@ -748,6 +771,13 @@ const CHECKS = [
     pattern: /(?<![.\w])(?:isPending|latest)\(\s*[A-Za-z_$][\w$]*\(\s*\)/g,
     message:
       'Pass the accessor to isPending/latest, not the call: isPending(user), not isPending(user()). Calling it first evaluates the read before the helper runs.',
+  },
+  {
+    // `<Loading on={id}>` — the accessor is never read, so `on` never re-arms.
+    id: 'loading-on-accessor',
+    find: loadingOnAccessorFindings,
+    message:
+      '`on` is a tracked dependency list, not a key: a bare accessor is never read, so the boundary never re-arms. Read it — on={id()} — or list several inputs: on={[a(), b()]}.',
   },
   {
     id: 'dynamic-jsx',
@@ -1263,7 +1293,7 @@ const SOLID2_LINE_PACKAGES = [
 // Packages doctor checks the version of: the Solid 1.x lines above, then any
 // release older than the kit's baseline (bin/baseline.mjs) — a bare
 // `npm i @solidjs/web` installs `latest`, 2.0.0-rc.0, which the current
-// @solidjs/vite-plugin's `@solidjs/web ^2.0.0-rc.9` peer rejects.
+// @solidjs/vite-plugin's `@solidjs/web ^2.0.0-rc.13` peer rejects.
 const VERSION_CHECKED = [...new Set([...SOLID2_LINE_PACKAGES.map((p) => p.name), ...Object.keys(BASELINE)])];
 
 // The lower bound of a single-comparator range ("^2.0.0-rc.0", "~2.0.0-rc.8",

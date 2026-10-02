@@ -68,7 +68,7 @@ export default function App() {
       {(props) => (
         <Stack>
           <a href={Router.paths()}>Home</a>
-          <Loading fallback={<p>Loading…</p>}>
+          <Loading fallback={<p>Loading…</p>} on={[Router.paths(), isServer]}>
             <Panel />
           </Loading>
           <input ref={[listen('focus', () => input.select()), (el) => (input = el)]} />

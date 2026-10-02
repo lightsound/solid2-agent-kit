@@ -120,6 +120,13 @@ const REQUIRED_APIS = [
   'subscriptions',
   'formatRerun',
   'captureArtifact',
+  'enablePerformanceTracks',
+  'sourceNames',
+  // named in the references index (library-facing hydration API)
+  'isHydrating',
+  'isHydratable',
+  'getHydrationWriter',
+  'takeHydrationValue',
 ];
 
 // Solid 1.x names that appear in kit content only as banned examples.
