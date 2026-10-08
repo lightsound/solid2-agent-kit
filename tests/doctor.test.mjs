@@ -194,8 +194,8 @@ for (const { name, id, bad, good } of [
   // npm `latest` of @solidjs/web / @solidjs/signals is 2.0.0-rc.0 and of
   // @solidjs/diagnostics 2.0.0-rc.2 while `next` is rc.14, and
   // @solidjs/vite-plugin's `next` (3.0.0-next.35) trails its `latest`. The
-  // previous baseline (rc.9 / next.27 / next.44) is below the floor now.
-  // The stable releases on `latest` must pass.
+  // previous baselines (rc.13 / next.34 / next.44) and older ones (rc.9) are
+  // below the floor now. The stable releases on `latest` must pass.
   ...['@solidjs/web', '@solidjs/signals', '@solidjs/diagnostics'].map((name) => {
     const stale = name === '@solidjs/diagnostics' ? '2.0.0-rc.2' : '2.0.0-rc.0';
     return {
@@ -207,7 +207,8 @@ for (const { name, id, bad, good } of [
         [stale, undefined, `pinned ${stale}`],
         ['>=2.0.0-beta.1', undefined, 'declared >=2.0.0-beta.1'],
         ['latest', `${stale}+build.1`, `installed ${stale} with build metadata`],
-        ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9 (the previous baseline)'],
+        ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
+        ['^2.0.0-rc.13', undefined, 'declared ^2.0.0-rc.13 (the previous baseline)'],
         ['next', '2.0.0-rc.13', 'installed 2.0.0-rc.13 (one below the baseline)'],
       ],
       good: [
@@ -240,7 +241,8 @@ for (const { name, id, bad, good } of [
     id: 'solid-js-version',
     bad: [
       ['^2.0.0-rc.0', undefined, 'declared ^2.0.0-rc.0'],
-      ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9 (the previous baseline)'],
+      ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
+      ['^2.0.0-rc.13', undefined, 'declared ^2.0.0-rc.13 (the previous baseline)'],
       ['next', '2.0.0-beta.30', 'installed 2.0.0-beta.30'],
     ],
     good: [
