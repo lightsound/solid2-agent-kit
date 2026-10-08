@@ -695,7 +695,7 @@ const CHECKS = [
     pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
     exemptImportsFrom: TANSTACK_ROUTER_MODULE,
     message:
-      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active/data-pending + CSS, or useLinkState).',
+      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active + CSS, data-pending via createRouter({ links: pendingLinks }), or useLinkState).',
   },
   {
     id: 'meta-provider',
@@ -749,6 +749,23 @@ const CHECKS = [
     pattern: /\b(?:onDoubleClick|onKeyPress|suppressHydrationWarning)=/g,
     message:
       'React DOM prop. Native dblclick is onDblClick; keypress is onKeyDown; Solid has no suppressHydrationWarning.',
+  },
+  {
+    // Only `on` + uppercase binds an event: since rc.14 a lowercase `on*`
+    // attribute is a plain attribute (dev warns [LOWERCASE_EVENT_ATTRIBUTE]),
+    // and a 1.x `on:click` is a plain namespaced attribute — neither runs the
+    // handler. A real event name in lowercase is always a leftover. Anchored
+    // on `={` (a JSX expression attribute): `const onmessage = ...`,
+    // `ws.onerror = fn`, and HTML strings (`onerror="…"`) are not matches,
+    // and neither is a string expression (`onclick={"track()"}`) — a string
+    // inline-handler attribute is the one legitimate lowercase use. The names
+    // are the GlobalEventHandlers / WindowEventHandlers set, so a custom
+    // attribute that merely starts with `on` (`one={…}`) is never flagged.
+    id: 'solid1-lowercase-event',
+    pattern:
+      /(?<=\s)on(?:abort|afterprint|animation(?:cancel|end|iteration|start)|auxclick|beforeinput|beforematch|beforeprint|beforetoggle|beforeunload|blur|cancel|canplay|canplaythrough|change|click|close|command|contextlost|contextmenu|contextrestored|copy|cuechange|cut|dblclick|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|durationchange|emptied|ended|error|focus|focusin|focusout|formdata|fullscreenchange|fullscreenerror|gotpointercapture|hashchange|input|invalid|keydown|keypress|keyup|languagechange|load|loadeddata|loadedmetadata|loadstart|lostpointercapture|message|messageerror|mousedown|mouseenter|mouseleave|mousemove|mouseout|mouseover|mouseup|offline|online|pagehide|pagereveal|pageshow|pageswap|paste|pause|play|playing|pointercancel|pointerdown|pointerenter|pointerleave|pointermove|pointerout|pointerover|pointerrawupdate|pointerup|popstate|progress|ratechange|rejectionhandled|reset|resize|scroll|scrollend|search|securitypolicyviolation|seeked|seeking|select|selectionchange|selectstart|slotchange|stalled|storage|submit|suspend|timeupdate|toggle|touchcancel|touchend|touchmove|touchstart|transitioncancel|transitionend|transitionrun|transitionstart|unhandledrejection|unload|volumechange|waiting|wheel)\s*=\s*\{(?!\s*["'`])/g,
+    message:
+      'Lowercase `on*` is a plain attribute in Solid 2 (dev warns [LOWERCASE_EVENT_ATTRIBUTE]), not an event binding. Use the camelCase prop (onClick).',
   },
   {
     id: 'history-nav',
@@ -1315,6 +1332,19 @@ function versionProblem(name, version, declared) {
   return null;
 }
 
+// An undeclared package on the baseline's major that a dependency pulled in
+// (the JSX compilers under @solidjs/vite-plugin): only the floor applies — a
+// lockfile keeps the version it first resolved. Another major is someone
+// else's copy, not the one the kit's guidance describes.
+function transitiveProblem(name, installed) {
+  const { line, baseline } = BASELINE[name];
+  if (!LOWER_BOUND.test(installed) || compareVersions(installed, `${line}.0.0-0`) < 0 || compareVersions(installed, `${line + 1}.0.0-0`) >= 0) {
+    return null;
+  }
+  if (compareVersions(installed, baseline) >= 0) return null;
+  return `older than ${baseline}, the release this kit's guidance is verified against. It is not in package.json, so a dependency installed it and the lockfile holds the old version: update it (\`npm update ${name}\`, \`pnpm update ${name}\`, or reinstall without the lockfile entry).`;
+}
+
 function installedVersion(target, name) {
   try {
     return JSON.parse(readFileSync(join(target, 'node_modules', name, 'package.json'), 'utf8')).version;
@@ -1342,7 +1372,12 @@ function doctorFindings(target) {
   for (const name of VERSION_CHECKED) {
     const id = SOLID2_LINE_PACKAGES.find((p) => p.name === name)?.id ?? `${name.replace('@solidjs/', '')}-version`;
     const range = deps[name];
-    if (typeof range !== 'string') continue;
+    if (typeof range !== 'string') {
+      const installed = BASELINE[name] && installedVersion(target, name);
+      const transitive = installed && transitiveProblem(name, installed);
+      if (transitive) report(id, `node_modules has ${name} ${installed} (not in package.json) — ${transitive}`);
+      continue;
+    }
     const declared = versionProblem(name, range, true);
     if (declared) {
       report(id, `package.json pins ${name} "${range}" — ${declared}`);

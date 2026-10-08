@@ -4,7 +4,7 @@
 // inside one probe.
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -57,9 +57,18 @@ export function createHarness(dir) {
     },
 
     // `vite build` of a throwaway project; `files` are paths relative to its root.
+    // `js` is the emitted JavaScript, concatenated, for claims about what a bundle retains.
     viteBuild(files) {
       const root = writeTree('vite', { 'index.html': '<script type="module" src="./main.js"></script>\n', ...files });
-      return run([join(dir, 'node_modules/vite/bin/vite.js'), 'build', root, '--logLevel', 'error']);
+      const result = run([join(dir, 'node_modules/vite/bin/vite.js'), 'build', root, '--logLevel', 'error']);
+      const assets = join(root, 'dist/assets');
+      const js = existsSync(assets)
+        ? readdirSync(assets)
+            .filter((f) => f.endsWith('.js'))
+            .map((f) => readFileSync(join(assets, f), 'utf8'))
+            .join('\n')
+        : '';
+      return { ...result, js };
     },
 
     // Type-checks one TSX module the way a kit project is configured.

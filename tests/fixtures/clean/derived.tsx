@@ -39,3 +39,15 @@ export function ThemeLabel(props: {
     </span>
   );
 }
+
+// Near-misses for solid1-lowercase-event: ordinary identifiers, HTML strings,
+// a string inline-handler attribute, and a custom attribute that only starts
+// with `on` are not JSX event props and must not be flagged.
+const onmessage = (e: MessageEvent) => e.data;
+let onerror: ((e: Event) => void) | null = null;
+const socket = { onmessage: null as null | ((e: MessageEvent) => void), onerror: null as null | ((e: Event) => void) };
+socket.onmessage = onmessage;
+socket.onerror = onerror;
+const html = `<img onerror="this.remove()">`;
+void html;
+export const Tracked = () => <button type="button" onclick={"track('cta')"} one={1}>go</button>;

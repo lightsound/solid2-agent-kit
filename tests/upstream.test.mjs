@@ -33,11 +33,13 @@ for (let i = 0; i < ordered.length; i++) {
 // the pick must skip other majors (`latest` on the Solid 1 lines) and take the
 // newest tag even when `latest` is ahead of `next`.
 const snapshot = [
-  ['solid-js', 2, { beta: '1.10.0-beta.0', latest: '1.9.15', next: '2.0.0-rc.13' }, '2.0.0-rc.13'],
-  ['@solidjs/web', 2, { latest: '2.0.0-rc.0', next: '2.0.0-rc.13' }, '2.0.0-rc.13'],
-  ['@solidjs/signals', 2, { latest: '2.0.0-rc.0', next: '2.0.0-rc.13' }, '2.0.0-rc.13'],
-  ['@solidjs/diagnostics', 2, { latest: '2.0.0-rc.2', next: '2.0.0-rc.13' }, '2.0.0-rc.13'],
-  ['@solidjs/router', 2, { beta: '0.10.0-beta.9', latest: '1.0.0', next: '2.0.0-next.34' }, '2.0.0-next.34'],
+  ['solid-js', 2, { beta: '1.10.0-beta.0', latest: '1.9.15', next: '2.0.0-rc.14' }, '2.0.0-rc.14'],
+  ['@solidjs/web', 2, { latest: '2.0.0-rc.0', next: '2.0.0-rc.14' }, '2.0.0-rc.14'],
+  ['@solidjs/signals', 2, { latest: '2.0.0-rc.0', next: '2.0.0-rc.14' }, '2.0.0-rc.14'],
+  ['@solidjs/diagnostics', 2, { latest: '2.0.0-rc.2', next: '2.0.0-rc.14' }, '2.0.0-rc.14'],
+  ['@solidjs/compiler', 2, { latest: '2.0.0-rc.2', next: '2.0.0-rc.14' }, '2.0.0-rc.14'],
+  ['@solidjs/babel-plugin', 2, { latest: '2.0.0-rc.2', next: '2.0.0-rc.14' }, '2.0.0-rc.14'],
+  ['@solidjs/router', 2, { beta: '0.10.0-beta.9', latest: '1.0.0', next: '2.0.0-next.37' }, '2.0.0-next.37'],
   ['@solidjs/vite-plugin', 3, { next: '3.0.0-next.35', latest: '3.0.0-next.47' }, '3.0.0-next.47'],
   ['@solidjs/testing-library', 1, { latest: '0.8.10', next: '1.0.0-beta.3' }, '1.0.0-beta.3'],
 ];

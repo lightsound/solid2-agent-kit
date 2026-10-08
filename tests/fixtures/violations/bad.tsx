@@ -47,7 +47,7 @@ export default function Broken() {
         <Navigate href="/" />
         <FileRoutes />
         <A href="/" />
-        <div className="box" use:model={1} on:click={noop} attr:title="x" onDoubleClick={noop} onKeyPress={noop} suppressHydrationWarning={true} />
+        <div className="box" use:model={1} on:click={noop} attr:title="x" onDoubleClick={noop} onKeyPress={noop} suppressHydrationWarning={true} onclick={noop} onmouseover={noop} onfocusout={noop} onpaste={noop} />
         <button type="button" onClick={setCount}>n</button>
         <Dynamic component={Page} />
         <Link href="/" />
