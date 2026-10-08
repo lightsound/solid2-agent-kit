@@ -95,6 +95,13 @@ if (storeAsyncHits !== 2) {
   fail(`expected 2 store-setter-async findings in store-async.tsx, saw ${storeAsyncHits}`, violations);
 }
 
+// Lowercase handlers: click/mouseover plus focusout and paste (names outside
+// the common mouse/keyboard set).
+const lowercaseHits = [...output.matchAll(/bad\.tsx:\d+ \[solid1-lowercase-event\]/g)].length;
+if (lowercaseHits !== 4) {
+  fail(`expected 4 solid1-lowercase-event findings in bad.tsx, saw ${lowercaseHits}`, violations);
+}
+
 // TanStack Router imports exempt only the names they bind (the clean
 // fixture's useRouter()/notFound()/<Navigate> pass); Router 1.x <Navigate>,
 // an aliased-away useRouter(), and an unimported notFound() are still caught.

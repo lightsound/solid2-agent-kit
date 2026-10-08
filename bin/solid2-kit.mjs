@@ -756,10 +756,14 @@ const CHECKS = [
     // and a 1.x `on:click` is a plain namespaced attribute — neither runs the
     // handler. A real event name in lowercase is always a leftover. Anchored
     // on `={` (a JSX expression attribute): `const onmessage = ...`,
-    // `ws.onerror = fn`, and HTML strings (`onerror="…"`) are not matches.
+    // `ws.onerror = fn`, and HTML strings (`onerror="…"`) are not matches,
+    // and neither is a string expression (`onclick={"track()"}`) — a string
+    // inline-handler attribute is the one legitimate lowercase use. The names
+    // are the GlobalEventHandlers / WindowEventHandlers set, so a custom
+    // attribute that merely starts with `on` (`one={…}`) is never flagged.
     id: 'solid1-lowercase-event',
     pattern:
-      /(?<=\s)on(?:abort|auxclick|animation(?:end|iteration|start)|beforeinput|beforetoggle|blur|cancel|canplay|change|click|close|contextmenu|copy|cuechange|cut|dblclick|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|durationchange|emptied|ended|error|focus|formdata|gotpointercapture|input|invalid|keydown|keypress|keyup|load|loadeddata|loadedmetadata|loadstart|lostpointercapture|message|mousedown|mouseenter|mouseleave|mousemove|mouseout|mouseover|mouseup|pause|play|playing|pointercancel|pointerdown|pointerenter|pointerleave|pointermove|pointerout|pointerover|pointerup|progress|ratechange|reset|resize|scroll|scrollend|seeked|seeking|select|slotchange|stalled|submit|suspend|timeupdate|toggle|touchcancel|touchend|touchmove|touchstart|transitioncancel|transitionend|transitionrun|transitionstart|volumechange|waiting|wheel)\s*=\s*\{/g,
+      /(?<=\s)on(?:abort|afterprint|animation(?:cancel|end|iteration|start)|auxclick|beforeinput|beforematch|beforeprint|beforetoggle|beforeunload|blur|cancel|canplay|canplaythrough|change|click|close|command|contextlost|contextmenu|contextrestored|copy|cuechange|cut|dblclick|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|durationchange|emptied|ended|error|focus|focusin|focusout|formdata|fullscreenchange|fullscreenerror|gotpointercapture|hashchange|input|invalid|keydown|keypress|keyup|languagechange|load|loadeddata|loadedmetadata|loadstart|lostpointercapture|message|messageerror|mousedown|mouseenter|mouseleave|mousemove|mouseout|mouseover|mouseup|offline|online|pagehide|pagereveal|pageshow|pageswap|paste|pause|play|playing|pointercancel|pointerdown|pointerenter|pointerleave|pointermove|pointerout|pointerover|pointerrawupdate|pointerup|popstate|progress|ratechange|rejectionhandled|reset|resize|scroll|scrollend|search|securitypolicyviolation|seeked|seeking|select|selectionchange|selectstart|slotchange|stalled|storage|submit|suspend|timeupdate|toggle|touchcancel|touchend|touchmove|touchstart|transitioncancel|transitionend|transitionrun|transitionstart|unhandledrejection|unload|volumechange|waiting|wheel)\s*=\s*\{(?!\s*["'`])/g,
     message:
       'Lowercase `on*` is a plain attribute in Solid 2 (dev warns [LOWERCASE_EVENT_ATTRIBUTE]), not an event binding. Use the camelCase prop (onClick).',
   },
