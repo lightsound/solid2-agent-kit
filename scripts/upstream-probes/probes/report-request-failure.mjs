@@ -10,13 +10,27 @@ export async function probe(h) {
   const r = h.nodeJson(
     `// The bare import under Node resolves to the server build (the "node"
      // condition on "."); the client export is checked in the types above.
-     import * as server from "@solidjs/web";
-     console.log(JSON.stringify({ exported: typeof server.reportRequestFailure }));
+     import { configureServerErrors, createComponent, renderToString, reportRequestFailure } from "@solidjs/web";
+     const heard = [];
+     configureServerErrors({ onError: (error, site) => { heard.push({ message: error?.message, kind: site?.kind, handling: site?.handling }); } });
+     let rethrown = false;
+     try {
+       renderToString(() => createComponent(() => { throw new Error("render"); }, {}));
+     } catch (e) {
+       rethrown = e?.message === "render";
+     }
+     const heardBeforeCatch = heard.length;
+     if (typeof reportRequestFailure === "function") reportRequestFailure(new Error("middleware"), { request: new Request("http://localhost/") });
+     console.log(JSON.stringify({ exported: typeof reportRequestFailure, heard, heardBeforeCatch, rethrown }));
      process.exit(0);`,
   );
   const exported = r.exported === 'function';
+  const render = r.heard.find((e) => e.message === 'render');
+  const request = r.heard.find((e) => e.message === 'middleware');
+  const renderFailed = r.rethrown && r.heardBeforeCatch === 1 && render?.kind === 'render' && render?.handling === 'failed';
+  const requestFailed = request?.kind === 'request' && request?.handling === 'failed';
   return {
-    reproduces: fnTyped && kindTyped && exported,
-    observed: `reportRequestFailure ${exported ? 'exported' : 'absent'} from @solidjs/web/server (typed ${fnTyped ? 'yes' : 'no'}); ServerErrorSite.kind includes "request": ${kindTyped}`,
+    reproduces: fnTyped && kindTyped && exported && renderFailed && requestFailed,
+    observed: `reportRequestFailure ${exported ? 'exported' : 'absent'} from the server build (typed ${fnTyped ? 'yes' : 'no'}); ServerErrorSite.kind includes "request": ${kindTyped}; renderToString sync throw heard as ${render ? `${render.kind}/${render.handling}` : 'nothing'} (rethrown: ${r.rethrown}); reportRequestFailure heard as ${request ? `${request.kind}/${request.handling}` : 'nothing'}`,
   };
 }
