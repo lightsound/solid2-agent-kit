@@ -283,6 +283,43 @@ if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "
   fail('expected a declared range below the baseline to be reported as allowing older releases', lowFloorWeb);
 }
 
+// The JSX compilers come in through @solidjs/vite-plugin, undeclared; a
+// lockfile can hold one below the baseline. Their own `latest` (rc.2) and
+// another major's copy are judged only when they are what node_modules has.
+const transitive = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-transitive-'));
+process.on('exit', () => rmSync(transitive, { recursive: true, force: true }));
+writeFileSync(
+  join(transitive, 'package.json'),
+  JSON.stringify({ name: 'consumer', dependencies: { 'solid-js': 'next' }, devDependencies: { '@solidjs/vite-plugin': 'latest' } }, null, 2),
+);
+const transitiveRun = (name, installed) => {
+  rmSync(join(transitive, 'node_modules'), { recursive: true, force: true });
+  mkdirSync(join(transitive, 'node_modules', name), { recursive: true });
+  writeFileSync(join(transitive, 'node_modules', name, 'package.json'), JSON.stringify({ name, version: installed }));
+  return runDoctor(transitive);
+};
+for (const [name, id] of [
+  ['@solidjs/compiler', 'compiler-version'],
+  ['@solidjs/babel-plugin', 'babel-plugin-version'],
+]) {
+  const old = transitiveRun(name, '2.0.0-rc.13');
+  if (
+    old.status === 0 ||
+    !old.stderr.includes(`[${id}] node_modules has ${name} 2.0.0-rc.13 (not in package.json) — older than 2.0.0-rc.14`) ||
+    !old.stderr.includes(`npm update ${name}`)
+  ) {
+    fail(`expected an undeclared ${name} 2.0.0-rc.13 to fail doctor with ${id} and name the update`, old);
+  }
+  for (const [installed, label] of [
+    ['2.0.0-rc.14', 'at the baseline'],
+    ['2.0.0', 'stable'],
+    ['1.9.0', 'on another major'],
+  ]) {
+    const result = transitiveRun(name, installed);
+    if (result.status !== 0) fail(`expected an undeclared ${name} ${installed} (${label}) to pass doctor`, result);
+  }
+}
+
 // Bare-major ranges ("^1", "~0") name the 1.x line without a minor.
 const bareMajor = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-major-'));
 process.on('exit', () => rmSync(bareMajor, { recursive: true, force: true }));
@@ -295,4 +332,4 @@ for (const id of ['solid-js-version', 'router-version', 'meta-version']) {
   if (!bareMajorRun.stderr.includes(`[${id}]`)) fail(`expected a bare-major range to be reported as ${id}`, bareMajorRun);
 }
 
-console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; TanStack Router 1.x / TanStack Query 5.x / Testing Library 0.x declared or installed caught, rc/next lines passed; Solid 2 prereleases older than the baseline (web/signals/diagnostics from \`latest\`, vite-plugin from \`next\`) caught, baseline and stable passed; bare-major 1.x ranges caught)`);
+console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router installed from latest caught, from next passed; TanStack Router 1.x / TanStack Query 5.x / Testing Library 0.x declared or installed caught, rc/next lines passed; Solid 2 prereleases older than the baseline (web/signals/diagnostics from \`latest\`, vite-plugin from \`next\`) caught, baseline and stable passed; undeclared JSX compilers below the baseline caught, at/above it or on another major passed; bare-major 1.x ranges caught)`);

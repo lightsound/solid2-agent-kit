@@ -10,11 +10,20 @@
 // and @solidjs/diagnostics `latest` is an older 2.0 rc than `next`;
 // @solidjs/vite-plugin's `next` is behind `latest`), so a bare install can
 // resolve a release older than the baseline.
+//
+// The JSX compilers (@solidjs/compiler, native and the default;
+// @solidjs/babel-plugin under `compiler: "babel"`) are listed because compiled
+// output carries behavior the guidance states (lowercase `on*` is a plain
+// attribute since rc.14). Projects rarely declare them — @solidjs/vite-plugin
+// pulls them in — so doctor also checks an undeclared install of any package
+// here, which is where a lockfile holds an older compiler.
 export const BASELINE = {
   'solid-js': { line: 2, baseline: '2.0.0-rc.14' },
   '@solidjs/web': { line: 2, baseline: '2.0.0-rc.14' },
   '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.14' },
   '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.14' },
+  '@solidjs/compiler': { line: 2, baseline: '2.0.0-rc.14' },
+  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0-rc.14' },
   '@solidjs/router': { line: 2, baseline: '2.0.0-next.37' },
   '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.47' },
   '@solidjs/testing-library': { line: 1, baseline: '1.0.0-beta.3' },

@@ -1328,6 +1328,19 @@ function versionProblem(name, version, declared) {
   return null;
 }
 
+// An undeclared package on the baseline's major that a dependency pulled in
+// (the JSX compilers under @solidjs/vite-plugin): only the floor applies — a
+// lockfile keeps the version it first resolved. Another major is someone
+// else's copy, not the one the kit's guidance describes.
+function transitiveProblem(name, installed) {
+  const { line, baseline } = BASELINE[name];
+  if (!LOWER_BOUND.test(installed) || compareVersions(installed, `${line}.0.0-0`) < 0 || compareVersions(installed, `${line + 1}.0.0-0`) >= 0) {
+    return null;
+  }
+  if (compareVersions(installed, baseline) >= 0) return null;
+  return `older than ${baseline}, the release this kit's guidance is verified against. It is not in package.json, so a dependency installed it and the lockfile holds the old version: update it (\`npm update ${name}\`, \`pnpm update ${name}\`, or reinstall without the lockfile entry).`;
+}
+
 function installedVersion(target, name) {
   try {
     return JSON.parse(readFileSync(join(target, 'node_modules', name, 'package.json'), 'utf8')).version;
@@ -1355,7 +1368,12 @@ function doctorFindings(target) {
   for (const name of VERSION_CHECKED) {
     const id = SOLID2_LINE_PACKAGES.find((p) => p.name === name)?.id ?? `${name.replace('@solidjs/', '')}-version`;
     const range = deps[name];
-    if (typeof range !== 'string') continue;
+    if (typeof range !== 'string') {
+      const installed = BASELINE[name] && installedVersion(target, name);
+      const transitive = installed && transitiveProblem(name, installed);
+      if (transitive) report(id, `node_modules has ${name} ${installed} (not in package.json) — ${transitive}`);
+      continue;
+    }
     const declared = versionProblem(name, range, true);
     if (declared) {
       report(id, `package.json pins ${name} "${range}" — ${declared}`);
