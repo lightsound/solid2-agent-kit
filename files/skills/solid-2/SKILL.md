@@ -2125,6 +2125,16 @@ agent use the mirror, which serves every page as plain markdown:
 
 A curated URL list is in [references/official-docs.md](references/official-docs.md).
 
+Known stale pages — this skill is verified against the installed release and wins:
+
+- `routing/solid-router/navigation` lists `data-pending` among the attributes the router
+  sets on its own; it needs `createRouter({ links: pendingLinks })`, and `aria-current`
+  also compares the query (the link-state paragraph under Solid Router 2 above).
+  <!-- upstream:docs-pending-links-stale -->
+- `reference/solid-js/reactivity/create-signal` says a write to a writable derivation
+  wins over a same-tick recompute; a source change in the same update re-runs the
+  function, which receives the write as `prev`. <!-- upstream:docs-derived-write-stale -->
+
 **Never** consult Solid 1.x sources (docs.solidjs.com, pre-2.0 tutorials, old Stack Overflow).
 Solid 2.0 is a breaking rewrite; 1.x answers are wrong here. The banned-API table is in the
 always-applied rules installed alongside this skill.
