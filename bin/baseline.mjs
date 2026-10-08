@@ -11,11 +11,11 @@
 // @solidjs/vite-plugin's `next` is behind `latest`), so a bare install can
 // resolve a release older than the baseline.
 export const BASELINE = {
-  'solid-js': { line: 2, baseline: '2.0.0-rc.13' },
-  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.13' },
-  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.13' },
-  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.13' },
-  '@solidjs/router': { line: 2, baseline: '2.0.0-next.34' },
+  'solid-js': { line: 2, baseline: '2.0.0-rc.14' },
+  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.14' },
+  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.14' },
+  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.14' },
+  '@solidjs/router': { line: 2, baseline: '2.0.0-next.37' },
   '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.47' },
   '@solidjs/testing-library': { line: 1, baseline: '1.0.0-beta.3' },
 };

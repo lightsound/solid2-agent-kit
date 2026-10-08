@@ -3,15 +3,15 @@
   "dependencies": {
     "solid-js": "^2.0.0",
     "@solidjs/web": "^2.0.0",
-    "@solidjs/signals": "^2.0.0-rc.13",
-    "@solidjs/router": "^2.0.0-next.34",
+    "@solidjs/signals": "^2.0.0-rc.14",
+    "@solidjs/router": "^2.0.0-next.37",
     "@solidjs/meta": "^1.0.0-next.2",
     "@tanstack/solid-router": "^2.0.0-rc.8",
     "@tanstack/solid-query": "^6.0.0-rc.4"
   },
   "devDependencies": {
     "@solidjs/vite-plugin": "^3.0.0-next.47",
-    "@solidjs/diagnostics": "^2.0.0-rc.13",
+    "@solidjs/diagnostics": "^2.0.0-rc.14",
     "@solidjs/testing-library": "^1.0.0",
     "vite": "^8.0.0"
   }

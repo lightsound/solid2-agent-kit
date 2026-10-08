@@ -695,7 +695,7 @@ const CHECKS = [
     pattern: /<(?:HashRouter|MemoryRouter|Route|Navigate|A|FileRoutes|StartClient|StartServer)\b/g,
     exemptImportsFrom: TANSTACK_ROUTER_MODULE,
     message:
-      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active/data-pending + CSS, or useLinkState).',
+      'Solid Router 0.x/1.x or SolidStart JSX. Define routes with createRouter({ routes }) / fileRoutes(pageRoutes) and plain <a href={Router.paths...}> (link state: automatic aria-current/data-active + CSS, data-pending via createRouter({ links: pendingLinks }), or useLinkState).',
   },
   {
     id: 'meta-provider',
@@ -749,6 +749,17 @@ const CHECKS = [
     pattern: /\b(?:onDoubleClick|onKeyPress|suppressHydrationWarning)=/g,
     message:
       'React DOM prop. Native dblclick is onDblClick; keypress is onKeyDown; Solid has no suppressHydrationWarning.',
+  },
+  {
+    // Only `on` + uppercase binds an event: since rc.14 a lowercase `on*`
+    // attribute is a plain attribute (dev warns [LOWERCASE_EVENT_ATTRIBUTE]),
+    // and a 1.x `on:click` is a plain namespaced attribute — neither runs the
+    // handler. A real event name in lowercase is always a leftover.
+    id: 'solid1-lowercase-event',
+    pattern:
+      /(?<=\s)on(?:abort|auxclick|animation(?:end|iteration|start)|beforeinput|beforetoggle|blur|cancel|canplay|change|click|close|contextmenu|copy|cuechange|cut|dblclick|drag|dragend|dragenter|dragleave|dragover|dragstart|drop|durationchange|emptied|ended|error|focus|formdata|gotpointercapture|input|invalid|keydown|keypress|keyup|load|loadeddata|loadedmetadata|loadstart|lostpointercapture|message|mousedown|mouseenter|mouseleave|mousemove|mouseout|mouseover|mouseup|pause|play|playing|pointercancel|pointerdown|pointerenter|pointerleave|pointermove|pointerout|pointerover|pointerup|progress|ratechange|reset|resize|scroll|scrollend|seeked|seeking|select|slotchange|stalled|submit|suspend|timeupdate|toggle|touchcancel|touchend|touchmove|touchstart|transitioncancel|transitionend|transitionrun|transitionstart|volumechange|waiting|wheel)\s*=/g,
+    message:
+      'Lowercase `on*` is a plain attribute in Solid 2 (dev warns [LOWERCASE_EVENT_ATTRIBUTE]), not an event binding. Use the camelCase prop (onClick).',
   },
   {
     id: 'history-nav',

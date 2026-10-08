@@ -60,6 +60,7 @@ const expected = [
   'typeof-window',
   'next-nav',
   'react-dom-event',
+  'solid1-lowercase-event',
   'history-nav',
   'pending-accessor-call',
   'loading-on-accessor',
