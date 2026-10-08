@@ -403,7 +403,9 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     `window.location` / `history.pushState`. Link state needs no component code:
     `aria-current` (same path and same query) and `data-active` (path prefix, the
     root exact-only) are automatic; `data-pending` is opt-in via
-    `createRouter({ links: pendingLinks })`. Style them in CSS; `useLinkState` /
+    `createRouter({ links: pendingLinks })`. Style them in CSS — nav highlighting on
+    `data-active` (a nav link to `/products` loses `aria-current` on
+    `/products?page=2`); `useLinkState` /
     `useIsRouting` in JSX — never hand-rolled `location.pathname` comparisons.
     <!-- upstream:pending-links-opt-in --> Trusted identity is
     `getRequestEvent()`, never a caller-supplied user id. Unscripted (no-JS) POST

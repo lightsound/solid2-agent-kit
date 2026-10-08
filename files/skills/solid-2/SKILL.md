@@ -1492,7 +1492,9 @@ Link state needs no component code: the router sets `aria-current="page"` (same 
 and same query — parameter order and hash aside), `data-active` (exact or descendant
 on the path only — the `/` link is active only on exact match), and, with the opt-in
 `createRouter({ links: pendingLinks })` plugin, `data-pending` (in-flight navigation
-target) on the anchors it handles; style them in CSS. An `aria-current` you write
+target) on the anchors it handles; style them in CSS. Highlight nav links on
+`data-active`, not `aria-current`: a nav link to `/products` is not current on
+`/products?page=2`. An `aria-current` you write
 yourself is yours — the router only manages the attribute on links where it set it.
 For non-anchors, or state needed in JSX, `useLinkState(() => href,
 { end })` returns the same three as accessors (`active` / `current` / `pending` —
