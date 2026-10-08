@@ -207,7 +207,11 @@ Claude Code) for full patterns, decision tables, and official documentation URLs
     updated *synchronous* state or DOM. Waiting on an async memo is
     `await resolve(() => value())` (or Testing Library async queries), not `flush()`.
     Never call `flush()` inside an `action`, an `onSettled` callback (throws in dev), or an
-    effect callback (a no-op, `[FLUSH_IN_EFFECT_CALLBACK]`).
+    effect callback (a no-op, `[FLUSH_IN_EFFECT_CALLBACK]`). Never create a memo, effect,
+    or root inside an effect callback either — it throws in dev
+    (`[PRIMITIVE_IN_EFFECT_CALLBACK]`, `runWithOwner(null, …)` included); create it in the
+    body or compute phase, or under `runWithOwner(owner, …)` with an owner captured in
+    the body. <!-- upstream:primitive-in-effect-callback -->
 14. Do not port these React tools — they have no Solid equivalent because the problems they
     solve don't exist: `useCallback`, `React.memo`, `forwardRef`, `useSyncExternalStore`,
     dependency arrays, `startTransition`/`useTransition` (updates are held and coordinated

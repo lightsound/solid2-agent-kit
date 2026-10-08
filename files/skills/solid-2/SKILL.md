@@ -981,7 +981,12 @@ onSettled(() => {
 
 Effect callbacks follow the same shape: return the cleanup from `apply` (an
 `onCleanup` there never runs), and `flush()` inside one is a no-op
-(`[FLUSH_IN_EFFECT_CALLBACK]`).
+(`[FLUSH_IN_EFFECT_CALLBACK]`). Creating a memo, an effect, or a root inside `apply`
+throws in dev (`[PRIMITIVE_IN_EFFECT_CALLBACK]` — the effect phase has no owner to
+dispose them; `runWithOwner(null, …)` does not lift it): create them in the
+component body or the compute phase, or attach them to an owner captured with
+`getOwner()` in the body via `runWithOwner(owner, …)`.
+<!-- upstream:primitive-in-effect-callback -->
 
 ### Per-value SSR policy: `ssrSource`
 
