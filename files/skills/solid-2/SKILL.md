@@ -1647,11 +1647,12 @@ Link state needs no component code: the router sets `aria-current="page"` (same 
 and same query — parameter order and hash aside), `data-active` (exact or descendant
 on the path only — the `/` link is active only on exact match), and, with the opt-in
 `createRouter({ links: pendingLinks })` plugin, `data-pending` (in-flight navigation
-target) on the anchors it handles; style them in CSS. The plugin is also what *reads*
-the in-flight navigation: without it nothing does, so every navigation that waits on a
+target) on the anchors it handles; style them in CSS. The plugin is also a *reader* of
+the in-flight navigation: without it, or a `useLinkState().pending` / `isPending` read of
+the location somewhere on screen, nothing reads it, so every navigation that waits on a
 lazy page or its first data is an unacknowledged hold (`[SILENT_HOLD]` past 100ms,
 shorter ones only in `toHaveNoSilentHolds`). Create the router with
-`links: pendingLinks` even when no stylesheet uses `data-pending` yet. <!-- upstream:pending-links-opt-in --> Highlight nav links on
+`links: pendingLinks` by default, even when no stylesheet uses `data-pending` yet. <!-- upstream:pending-links-opt-in --> Highlight nav links on
 `data-active`, not `aria-current`: a nav link to `/products` is not current on
 `/products?page=2`. An `aria-current` you write
 yourself is yours — the router only manages the attribute on links where it set it.
