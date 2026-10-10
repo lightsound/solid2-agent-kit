@@ -2302,6 +2302,10 @@ Known stale pages — this skill is verified against the installed release and w
 - `reference/solid-js/reactivity/create-signal` says a write to a writable derivation
   wins over a same-tick recompute; a source change in the same update re-runs the
   function, which receives the write as `prev`. <!-- upstream:docs-derived-write-stale -->
+- `guides/performance` ("tracks 30 or more sources") and the attribution reference
+  (`wideDeps`, "default 30") give the old `[WIDE_SCOPE_DEPS]` threshold; the default is
+  200, and a list's insert pass is exempt from the check (see
+  [Lists](#lists-for-child-signatures-per-keying-mode)). <!-- upstream:docs-wide-deps-stale -->
 
 **Never** consult Solid 1.x sources (docs.solidjs.com, pre-2.0 tutorials, old Stack Overflow).
 Solid 2.0 is a breaking rewrite; 1.x answers are wrong here. The banned-API table is in the
