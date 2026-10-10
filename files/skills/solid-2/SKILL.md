@@ -838,9 +838,12 @@ fine — those nodes are already resolved.
 Join and narrow **upstream of the list**, not per row. A row that narrows its own
 lookup — `<For each={layout().cards}>{(card) => <Show when={byKey().get(card().key)}>…}` —
 makes every row a reactive source of the list's insert effect (one per row; a plain
-element or component row costs none), which is `[WIDE_SCOPE_DEPS]` from 30 rows. Build
-the joined rows in one memo and iterate those; `flatMap` drops the misses without a
-`!`:
+element or component row costs none), so every row change re-runs one effect that
+tracks the whole list. Nothing flags it below 2000 rows: `[WIDE_SCOPE_DEPS]` skips that
+insert pass by design (and defaults to 200 sources), and only the always-on
+`[HUGE_FAN_IN]` reports it, from 2000 — so this is a review rule, not something a
+diagnostics gate catches. <!-- upstream:per-row-show-insert-sources --> Build the joined
+rows in one memo and iterate those; `flatMap` drops the misses without a `!`:
 
 ```tsx
 const cards = createMemo(() => {
@@ -1324,11 +1327,10 @@ What the shape has to get right:
   exist in the server build (a `<html>` document shell) get their own `node` project
   rendered with `renderToString`, outside the gate.
 - **No HMR transform in the test project**: `solid({ refresh: { disabled: true } })`.
-  solid-refresh wraps every component declaration in a memo, and that wrapper is a
-  reactive source, so a list of component rows counts one source per row — the gate
-  then measures a graph production never ships. The same wrappers raise
-  `[WIDE_SCOPE_DEPS]` in `vite dev` on a 30+ row list, every source named
-  `[solid-refresh]<Component>`; read the source names before chasing it.
+  The refresh transform wraps every component declaration in a memo, so the graph
+  under test is not the graph production ships, and tests have no HMR to serve. (The
+  wrappers are marked as plumbing, so the engine does not count them as sources.)
+  <!-- upstream:per-row-show-insert-sources -->
 - **Two assertions, not one.** `[SILENT_HOLD]` is emitted only once a hold outlasts
   `holds.infoMs` (100ms), so a shorter unacknowledged hold is recorded and coded
   nowhere; `expectNoSilentHolds` asks the hold table, where no threshold applies.
@@ -1356,10 +1358,12 @@ What the shape has to get right:
   and then `allow` it), so the test fails when it stops provoking the code instead of
   decaying into a mute. Never `allow` a finding about real code.
 - **Fixtures above the threshold** for scale-dependent codes. `[WIDE_SCOPE_DEPS]` fires
-  at 30 dependencies, `[HUGE_FAN_OUT]` / `[HUGE_FAN_IN]` and `[HOT_SCOPE_RERUNS]` at their
-  own counts, so a list rendered with three rows cannot falsify a per-row cost. Give any
-  list-shaped subject one fixture past its threshold, and check it fails with the defect
-  re-injected.
+  at 200 dependencies by default, `[HUGE_FAN_OUT]` / `[HUGE_FAN_IN]` and
+  `[HOT_SCOPE_RERUNS]` at their own counts, so a fixture of three rows cannot falsify a
+  per-row cost. When a gate is meant to catch one, give it a fixture past the code's
+  threshold (or a lower threshold in the capture's `attribution` options) and check it
+  fails with the defect re-injected. A per-row cost in a list's own insert pass is
+  outside `[WIDE_SCOPE_DEPS]` entirely (see [Lists](#lists-for-child-signatures-per-keying-mode)).
 
 An emulated DOM cannot see everything, so keep one **real-browser gate** for the main
 path: `captureBrowserArtifact(page, interact, { scenario })` from
@@ -2127,7 +2131,7 @@ how to reuse. Prefer the form on the right.
 | `Object.assign({}, props)` / expecting `merge` to skip `undefined` like 1.x `mergeProps` | `omit` / `merge` — explicit `undefined` **overrides** (Object.assign) |
 | `isPending(user())` / `latest(user())` | `isPending(user)` / `latest(user)` — pass the accessor (or `() => user()`). Calling it first evaluates the read before the helper runs |
 | `isPending(...)` as the first-load spinner | `<Loading>` owns first flight; `isPending` is the *refetch* indicator after a settled answer exists |
-| `<For each={rows()}>{(row) => <Show when={byKey().get(row().key)}>…</Show>}</For>` (narrowing per row) | join in one memo upstream and iterate the joined rows (`flatMap` drops misses) — a per-row `<Show>` makes every row a source of the list's insert effect (`[WIDE_SCOPE_DEPS]` from 30 rows) |
+| `<For each={rows()}>{(row) => <Show when={byKey().get(row().key)}>…</Show>}</For>` (narrowing per row) | join in one memo upstream and iterate the joined rows (`flatMap` drops misses) — a per-row `<Show>` makes every row a source of the list's insert effect, which no diagnostic flags below `[HUGE_FAN_IN]`'s 2000 <!-- upstream:per-row-show-insert-sources --> |
 | a subscription opened beside `createMemo(() => iterate())` instead of inside its compute | open it inside the compute with `onCleanup` there — args changes re-subscribe, `refresh` / `reset` retry with a fresh subscription, unmount closes it |
 | a held write with no feedback anywhere | pair it with `isPending()` / `latest()` / an optimistic value / `affects()` — otherwise dev + attribution reports `[SILENT_HOLD]` |
 | `refresh(getUser.key)` / `revalidate(user)` / `return refresh()` from `"use server"` | three APIs: core `refresh(source)` reruns a reactive source; router `revalidate(getUser.key)` invalidates the query cache; `return reload({ revalidate: "todos" })` asks the integration to refresh cached data |
@@ -2378,9 +2382,9 @@ always-applied rules installed alongside this skill.
       effects. Name interrogated scopes (`{ name: "total" }`). `observe: true` is a
       production opt-in, not a dev step.
 - [ ] Tests that render run under a DOM environment with the HMR transform off and a
-      per-test capture asserting `expectNoDiagnostics` + `expectNoSilentHolds`; list
-      subjects have a fixture above `[WIDE_SCOPE_DEPS]`'s 30; app code does not call
-      `attribution.enable()` under the harness.
+      per-test capture asserting `expectNoDiagnostics` + `expectNoSilentHolds`; app code
+      does not call `attribution.enable()` under the harness. List rows do not narrow
+      themselves with a per-row `<Show>` (no diagnostic catches it).
 - [ ] If the project has a router: `createRouter({ routes })`, not JSX `<Route>` / `<A>`.
       One instance, no nested `<Router>`. Navigate with `useNavigate` / `<a href>`, not
       `window.location`. Router `action`/`query` come from `@solidjs/router` (POST forms + cache), not
