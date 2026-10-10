@@ -27,6 +27,8 @@ export { WATCHED };
 export const TOOLING = {
   vite: '^8.0.0',
   typescript: '6.0.3',
+  // A DOM for probes that render through @solidjs/web's client build.
+  'happy-dom': '^20.0.0',
 };
 
 const MARKER = /<!--\s*upstream:([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+(https:\/\/\S+))?\s*-->/g;
