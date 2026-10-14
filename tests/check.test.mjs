@@ -61,6 +61,7 @@ const expected = [
   'next-nav',
   'react-dom-event',
   'solid1-lowercase-event',
+  'preload-links-boolean',
   'history-nav',
   'pending-accessor-call',
   'loading-on-accessor',

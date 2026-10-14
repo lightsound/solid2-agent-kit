@@ -768,6 +768,15 @@ const CHECKS = [
       'Lowercase `on*` is a plain attribute in Solid 2 (dev warns [LOWERCASE_EVENT_ATTRIBUTE]), not an event binding. Use the camelCase prop (onClick).',
   },
   {
+    // `preloadLinks` takes link preload strategies since @solidjs/router
+    // 2.0.0-next.38 and preloads nothing by default: `true` (the old on switch)
+    // preloads nothing and only warns in dev, and `false` is a no-op.
+    id: 'preload-links-boolean',
+    pattern: /\bpreloadLinks\s*:\s*(?:true|false)\b/g,
+    message:
+      '`preloadLinks` takes link preload strategies, not a boolean, and preloads nothing by default. Hover/focus warming is preloadLinks: intentPreload() (from "@solidjs/router"); to disable it, omit the option.',
+  },
+  {
     id: 'history-nav',
     pattern: /\b(?:history\.pushState|history\.replaceState|window\.location\.href\s*=)/g,
     message:

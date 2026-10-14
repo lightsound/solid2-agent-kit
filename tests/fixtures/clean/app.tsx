@@ -10,7 +10,7 @@ import {
   type ParentProps,
 } from 'solid-js';
 import { clientOnly, dynamic, httpStatus, isServer } from '@solidjs/web';
-import { action, createRouter } from '@solidjs/router';
+import { action, createRouter, intentPreload } from '@solidjs/router';
 import { Title } from '@solidjs/meta';
 
 const Home = lazy(() => import('./Home'));
@@ -24,6 +24,7 @@ void saveNote;
 
 export const Router = createRouter({
   routes: [{ path: '/', component: Home }],
+  preloadLinks: intentPreload(),
 });
 
 // Comments mentioning banned tokens must not trip the gate: this file was

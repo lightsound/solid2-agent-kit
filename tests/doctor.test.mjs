@@ -126,10 +126,10 @@ const latestRouter = runDoctor(tagged);
 if (latestRouter.status === 0 || !latestRouter.stderr.includes('[router-version] node_modules has @solidjs/router 1.0.0')) {
   fail('expected @solidjs/router installed from `latest` (1.0.0) to fail doctor with router-version', latestRouter);
 }
-installRouter('2.0.0-next.37');
+installRouter('2.0.0-next.39');
 const nextRouter = runDoctor(tagged);
 if (nextRouter.status !== 0) {
-  fail('expected @solidjs/router installed from `next` (2.0.0-next.37) to pass doctor', nextRouter);
+  fail('expected @solidjs/router installed from `next` (2.0.0-next.39) to pass doctor', nextRouter);
 }
 
 // TanStack Router's `latest` is 1.x (solid-js ^1.9 peer); the Solid 2 line is
@@ -192,9 +192,9 @@ for (const { name, id, bad, good } of [
   },
   // Solid 2 prereleases older than the kit's baseline (bin/baseline.mjs):
   // npm `latest` of @solidjs/web / @solidjs/signals is 2.0.0-rc.0 and of
-  // @solidjs/diagnostics 2.0.0-rc.2 while `next` is rc.14, and
+  // @solidjs/diagnostics 2.0.0-rc.2 while `next` is rc.15, and
   // @solidjs/vite-plugin's `next` (3.0.0-next.35) trails its `latest`. The
-  // previous baselines (rc.13 / next.34 / next.44) and older ones (rc.9) are
+  // previous baselines (rc.14 / next.37 / next.47) and older ones (rc.9, rc.13) are
   // below the floor now. The stable releases on `latest` must pass.
   ...['@solidjs/web', '@solidjs/signals', '@solidjs/diagnostics'].map((name) => {
     const stale = name === '@solidjs/diagnostics' ? '2.0.0-rc.2' : '2.0.0-rc.0';
@@ -208,16 +208,17 @@ for (const { name, id, bad, good } of [
         ['>=2.0.0-beta.1', undefined, 'declared >=2.0.0-beta.1'],
         ['latest', `${stale}+build.1`, `installed ${stale} with build metadata`],
         ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
-        ['^2.0.0-rc.13', undefined, 'declared ^2.0.0-rc.13 (the previous baseline)'],
-        ['next', '2.0.0-rc.13', 'installed 2.0.0-rc.13 (one below the baseline)'],
+        ['^2.0.0-rc.13', undefined, 'declared ^2.0.0-rc.13'],
+        ['^2.0.0-rc.14', undefined, 'declared ^2.0.0-rc.14 (the previous baseline)'],
+        ['next', '2.0.0-rc.14', 'installed 2.0.0-rc.14 (one below the baseline)'],
       ],
       good: [
-        ['latest', '2.0.0-rc.14', 'installed from `latest` once it is rc.14'],
-        ['next', '2.0.0-rc.14', 'installed from `next` at the baseline'],
-        ['^2.0.0-rc.14', undefined, 'declared ^2.0.0-rc.14'],
+        ['latest', '2.0.0-rc.15', 'installed from `latest` once it is rc.15'],
+        ['next', '2.0.0-rc.15', 'installed from `next` at the baseline'],
+        ['^2.0.0-rc.15', undefined, 'declared ^2.0.0-rc.15'],
         ['^2.0.0', undefined, 'declared ^2.0.0 (stable)'],
         ['latest', '2.0.0', 'installed from `latest` once stable'],
-        ['latest', '2.0.0-rc.14+build.1', 'installed rc.14 with build metadata'],
+        ['latest', '2.0.0-rc.15+build.1', 'installed rc.15 with build metadata'],
         ['*', undefined, 'declared * but not installed yet'],
       ],
     };
@@ -228,11 +229,12 @@ for (const { name, id, bad, good } of [
     bad: [
       ['next', '3.0.0-next.35', 'installed from `next` (3.0.0-next.35)'],
       ['^3.0.0-next.35', undefined, 'declared ^3.0.0-next.35'],
-      ['^3.0.0-next.44', undefined, 'declared ^3.0.0-next.44 (the previous baseline)'],
+      ['^3.0.0-next.44', undefined, 'declared ^3.0.0-next.44'],
+      ['^3.0.0-next.47', undefined, 'declared ^3.0.0-next.47 (the previous baseline)'],
     ],
     good: [
-      ['latest', '3.0.0-next.47', 'installed from `latest`'],
-      ['^3.0.0-next.47', undefined, 'declared ^3.0.0-next.47'],
+      ['latest', '3.0.0-next.50', 'installed from `latest`'],
+      ['^3.0.0-next.50', undefined, 'declared ^3.0.0-next.50'],
       ['^3.0.0', undefined, 'declared ^3.0.0 (stable)'],
     ],
   },
@@ -242,12 +244,13 @@ for (const { name, id, bad, good } of [
     bad: [
       ['^2.0.0-rc.0', undefined, 'declared ^2.0.0-rc.0'],
       ['^2.0.0-rc.9', undefined, 'declared ^2.0.0-rc.9'],
-      ['^2.0.0-rc.13', undefined, 'declared ^2.0.0-rc.13 (the previous baseline)'],
+      ['^2.0.0-rc.13', undefined, 'declared ^2.0.0-rc.13'],
+      ['^2.0.0-rc.14', undefined, 'declared ^2.0.0-rc.14 (the previous baseline)'],
       ['next', '2.0.0-beta.30', 'installed 2.0.0-beta.30'],
     ],
     good: [
-      ['next', '2.0.0-rc.14', 'installed from `next`'],
-      ['^2.0.0-rc.14', undefined, 'declared ^2.0.0-rc.14'],
+      ['next', '2.0.0-rc.15', 'installed from `next`'],
+      ['^2.0.0-rc.15', undefined, 'declared ^2.0.0-rc.15'],
     ],
   },
   {
@@ -255,9 +258,10 @@ for (const { name, id, bad, good } of [
     id: 'router-version',
     bad: [
       ['^2.0.0-next.20', undefined, 'declared ^2.0.0-next.20'],
-      ['^2.0.0-next.34', undefined, 'declared ^2.0.0-next.34 (the previous baseline)'],
+      ['^2.0.0-next.34', undefined, 'declared ^2.0.0-next.34'],
+      ['^2.0.0-next.37', undefined, 'declared ^2.0.0-next.37 (the previous baseline)'],
     ],
-    good: [['^2.0.0-next.37', undefined, 'declared ^2.0.0-next.37']],
+    good: [['^2.0.0-next.39', undefined, 'declared ^2.0.0-next.39']],
   },
 ]) {
   for (const [range, installed, label] of bad) {
@@ -275,13 +279,13 @@ for (const { name, id, bad, good } of [
 // The stale-baseline message names the package, what resolved, and the range to install.
 const staleWeb = lineRun('@solidjs/web', 'latest', '2.0.0-rc.0');
 if (
-  !staleWeb.stderr.includes('[web-version] node_modules has @solidjs/web 2.0.0-rc.0 (package.json: "latest") — older than 2.0.0-rc.14') ||
-  !staleWeb.stderr.includes('Install @solidjs/web@^2.0.0-rc.14.')
+  !staleWeb.stderr.includes('[web-version] node_modules has @solidjs/web 2.0.0-rc.0 (package.json: "latest") — older than 2.0.0-rc.15') ||
+  !staleWeb.stderr.includes('Install @solidjs/web@^2.0.0-rc.15.')
 ) {
   fail('expected the web-version finding to name the resolved rc and the baseline range to install', staleWeb);
 }
-const lowFloorWeb = lineRun('@solidjs/web', '^2.0.0-rc.0', '2.0.0-rc.13');
-if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "^2.0.0-rc.0" — allows releases older than 2.0.0-rc.14')) {
+const lowFloorWeb = lineRun('@solidjs/web', '^2.0.0-rc.0', '2.0.0-rc.14');
+if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "^2.0.0-rc.0" — allows releases older than 2.0.0-rc.15')) {
   fail('expected a declared range below the baseline to be reported as allowing older releases', lowFloorWeb);
 }
 
@@ -304,16 +308,16 @@ for (const [name, id] of [
   ['@solidjs/compiler', 'compiler-version'],
   ['@solidjs/babel-plugin', 'babel-plugin-version'],
 ]) {
-  const old = transitiveRun(name, '2.0.0-rc.13');
+  const old = transitiveRun(name, '2.0.0-rc.14');
   if (
     old.status === 0 ||
-    !old.stderr.includes(`[${id}] node_modules has ${name} 2.0.0-rc.13 (not in package.json) — older than 2.0.0-rc.14`) ||
+    !old.stderr.includes(`[${id}] node_modules has ${name} 2.0.0-rc.14 (not in package.json) — older than 2.0.0-rc.15`) ||
     !old.stderr.includes(`npm update ${name}`)
   ) {
-    fail(`expected an undeclared ${name} 2.0.0-rc.13 to fail doctor with ${id} and name the update`, old);
+    fail(`expected an undeclared ${name} 2.0.0-rc.14 to fail doctor with ${id} and name the update`, old);
   }
   for (const [installed, label] of [
-    ['2.0.0-rc.14', 'at the baseline'],
+    ['2.0.0-rc.15', 'at the baseline'],
     ['2.0.0', 'stable'],
     ['1.9.0', 'on another major'],
   ]) {
