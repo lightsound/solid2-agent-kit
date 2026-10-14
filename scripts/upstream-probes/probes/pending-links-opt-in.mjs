@@ -18,15 +18,16 @@ export async function probe(h) {
   const hookPending = /pending: createMemo\(\(\) => \{[^}]*linkPending\(router, to\(\), base, options\.end\)/.test(routing);
   // The matching rule claimed anchors and useLinkState share.
   const m = h.nodeJson(
-    `import { matchLink } from ${JSON.stringify(`${h.dir}/node_modules/@solidjs/router/dist/utils.js`)};
+    `import { linkMatcher } from ${JSON.stringify(`${h.dir}/node_modules/@solidjs/router/dist/utils.js`)};
      const at = (pathname, search = "") => ({ pathname, search });
+     const match = (location, target, base) => linkMatcher(location, base)(target);
      console.log(JSON.stringify({
-       reordered: matchLink(at("/a", "?x=1&y=2"), "/a?y=2&x=1", ""),
-       queryMissing: matchLink(at("/a", "?page=2"), "/a", ""),
-       hashIgnored: matchLink(at("/a", "?x=1"), "/a?x=1#h", ""),
-       descendant: matchLink(at("/a/b"), "/a", ""),
-       root: matchLink(at("/a"), "/", ""),
-       base: matchLink(at("/app/x"), "/app", "/app"),
+       reordered: match(at("/a", "?x=1&y=2"), "/a?y=2&x=1", ""),
+       queryMissing: match(at("/a", "?page=2"), "/a", ""),
+       hashIgnored: match(at("/a", "?x=1"), "/a?x=1#h", ""),
+       descendant: match(at("/a/b"), "/a", ""),
+       root: match(at("/a"), "/", ""),
+       base: match(at("/app/x"), "/app", "/app"),
      }));
      process.exit(0);`,
   );
