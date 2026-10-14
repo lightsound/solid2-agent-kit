@@ -3,7 +3,7 @@
 import { Link, useRouter as useTanstackRouter } from '@tanstack/solid-router';
 import { createRouter, Navigate } from '@solidjs/router';
 
-// The pre-next.39 boolean switch: preloads nothing now.
+// The pre-next.38 boolean switch: preloads nothing now.
 export const Router = createRouter({ routes: [], preloadLinks: true });
 
 export function Legacy() {

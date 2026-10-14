@@ -1608,7 +1608,7 @@ Session location is `useLocation` / `useParams`,
 not `Router.paths`.
 
 **Route `preload` starts reads; the page reads them in a memo.** `preload` runs when
-the route matches (and ahead of a click under a `preloadLinks` strategy), so it should kick off the query and return
+the route matches (and ahead of a click under a `preloadLinks` strategy <!-- upstream:preload-links-opt-in -->), so it should kick off the query and return
 nothing; the component reads the same query through a memo that tracks the params:
 
 ```tsx
