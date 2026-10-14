@@ -5,6 +5,7 @@ import { createRouter, Navigate } from '@solidjs/router';
 
 // The pre-next.38 boolean switch: preloads nothing now.
 export const Router = createRouter({ routes: [], preloadLinks: true });
+export const Quoted = createRouter({ routes: [], "preloadLinks": false });
 
 export function Legacy() {
   useTanstackRouter();
