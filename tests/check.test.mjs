@@ -111,6 +111,13 @@ if (routerScopeHits !== 3) {
   fail(`expected 3 next-nav/solid1-router findings in router-scope.tsx, saw ${routerScopeHits}`, violations);
 }
 
+// A boolean preloadLinks is reported with a bare key and a quoted one.
+for (const line of [7, 8]) {
+  if (!new RegExp(`router-scope\\.tsx:${line} \\[preload-links-boolean\\]`).test(output)) {
+    fail(`expected preload-links-boolean at router-scope.tsx:${line}`, violations);
+  }
+}
+
 // Solid 1.x effect/memo signatures (one-arg effect, effect and memo initial
 // values), a destructured createProjection, valueless `use:` directives (one
 // before an `as` attribute), and `key` on a local component that only shares
