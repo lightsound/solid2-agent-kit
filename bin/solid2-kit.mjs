@@ -772,9 +772,9 @@ const CHECKS = [
     // 2.0.0-next.38 and preloads nothing by default: `true` (the old on switch)
     // preloads nothing and only warns in dev, and `false` is a no-op.
     id: 'preload-links-boolean',
-    pattern: /\bpreloadLinks\s*:\s*(?:true|false)\b/g,
+    pattern: /(?<![\w$])["']?preloadLinks["']?\s*:\s*(?:true|false)\b/g,
     message:
-      '`preloadLinks` takes link preload strategies, not a boolean, and preloads nothing by default. Hover/focus warming is preloadLinks: intentPreload() (from "@solidjs/router"); to disable it, omit the option.',
+      '`preloadLinks` takes link preload strategies, not a boolean, and preloads nothing by default. Hover/focus warming is preloadLinks: intentPreload() (from "@solidjs/router"); for none, omit the option.',
   },
   {
     id: 'history-nav',
