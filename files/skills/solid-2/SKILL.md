@@ -2507,8 +2507,9 @@ always-applied rules installed alongside this skill.
 - [ ] If the project has a router: `createRouter({ routes })`, not JSX `<Route>` / `<A>`.
       One instance, no nested `<Router>`. Navigate with `useNavigate` / `<a href>`, not
       `window.location`. Router `formAction`/`query` come from `@solidjs/router` (POST forms + cache), not
-      core `action`/`refresh`; router `action` and `useAction` are deprecated aliases
-      (single flight is the router's — call server functions directly). Forms: `<form action={save} method="post">`. Core `action`
+      core `action`/`refresh`; router `action` is a deprecated alias of `formAction` and
+      `useAction` is deprecated <!-- upstream:router-action-deprecated --> (single flight is
+      the router's — call server functions directly). Forms: `<form action={save} method="post">`. Core `action`
       bodies are generators (`function*` / `async function*`) suspending on `yield`,
       never plain `async` functions. Link state is automatic attributes + CSS
       (`aria-current` / `data-active`, `data-pending` via `links: pendingLinks`;

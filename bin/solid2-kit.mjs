@@ -849,15 +849,16 @@ const CHECKS = [
   },
 ];
 
-// Named imports from "@solidjs/router" (aliased ones included) among `names`,
-// located at the name inside the import list.
+// Named imports from "@solidjs/router" among `names`, located at the name inside
+// the import list. Only the imported name counts: `action as save` is flagged,
+// `formAction as action` (the local name) is not.
 function routerImportFindings(content, names) {
   const findings = [];
   for (const statement of content.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]@solidjs\/router['"]/g)) {
     const list = statement[1];
     const offset = statement.index + statement[0].indexOf(list);
     for (const name of names) {
-      for (const match of list.matchAll(new RegExp(`(?<![\\w$.])(?:type\\s+)?${name}(?![\\w$])`, 'g'))) {
+      for (const match of list.matchAll(new RegExp(`(?<![\\w$.])(?<!\\bas\\s+)(?:type\\s+)?${name}(?![\\w$])`, 'g'))) {
         findings.push({ index: offset + match.index });
       }
     }

@@ -1,6 +1,7 @@
 // Deprecated @solidjs/router names (2.0.0-next.41): `action` / `Action` are
 // aliases of `formAction` / `FormAction`, and `useAction` has no replacement.
-import { action, useAction, type Action } from '@solidjs/router';
+import { action as formAlias, useAction, type Action } from '@solidjs/router';
+const action = formAlias;
 
 export const save = action(async (form: FormData) => String(form.get('note') ?? ''), 'save');
 export type Save = Action<[FormData], string>;

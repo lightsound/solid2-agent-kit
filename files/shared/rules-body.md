@@ -574,7 +574,7 @@ directory (default `src/`).
 | `import ... from "@solidjs/start"` / `vinxi` / `h3` / `"use client"` | `GET` from `@solidjs/web/server-functions`; Solid has no `"use client"` |
 | `render(<App />, root)` | `render(() => <App />, root)` (same for `hydrate` / `renderToString` / `renderToStream`) |
 | `<MetaProvider>` | no provider — render `<Title>` / `<Meta>` / `<Link>` from `@solidjs/meta` anywhere |
-| `use:directive`, `on:`/`oncapture:`, `attr:`/`bool:`, `/*@once*/` (compile errors on native elements since 2.0.0-rc.17; also lowercase `onclick`-style attributes — plain attributes, not events <!-- upstream:lowercase-event-attribute -->) | `ref` callbacks, camelCase `on`-capitalized event props, standard attributes, keep values reactive; `prop:` remains for DOM properties (`prop:indeterminate`, objects/arrays on custom elements — plain props are attributes and stringify) |
+| `use:directive`, `on:`/`oncapture:`, `attr:`/`bool:`, `/*@once*/` (the namespaces are compile errors on native elements since 2.0.0-rc.17 <!-- upstream:removed-attribute-compile-error -->; also lowercase `onclick`-style attributes — plain attributes, not events <!-- upstream:lowercase-event-attribute -->) | `ref` callbacks, camelCase `on`-capitalized event props, standard attributes, keep values reactive; `prop:` remains for DOM properties (`prop:indeterminate`, objects/arrays on custom elements — plain props are attributes and stringify) |
 | `resource.loading` / `resource.error` | `<Loading>` boundary / `<Errored>` boundary |
 
 When unsure about any API, verify against the official Solid 2.0 docs — fetchable URLs are
