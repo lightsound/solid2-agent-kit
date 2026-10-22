@@ -69,6 +69,8 @@ const expected = [
   'jsx-namespace-import',
   'effect-sync-signal',
   'action-plain-async',
+  'router-action-alias',
+  'router-use-action',
   'store-setter-async',
   'solid1-effect-memo-signature',
   'projection-destructure',

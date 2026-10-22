@@ -14,19 +14,20 @@
 // The JSX compilers (@solidjs/compiler, native and the default;
 // @solidjs/babel-plugin under `compiler: "babel"`) are listed because compiled
 // output carries behavior the guidance states (lowercase `on*` is a plain
-// attribute since rc.14). Projects rarely declare them — @solidjs/vite-plugin
+// attribute since rc.14; the removed 1.x attribute forms are compile errors
+// since rc.17). Projects rarely declare them — @solidjs/vite-plugin
 // pulls them in — so doctor also checks an undeclared install of any package
 // here, which is where a lockfile holds an older compiler.
 export const BASELINE = {
-  'solid-js': { line: 2, baseline: '2.0.0-rc.15' },
-  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.15' },
-  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.15' },
-  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.15' },
-  '@solidjs/compiler': { line: 2, baseline: '2.0.0-rc.15' },
-  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0-rc.15' },
-  '@solidjs/router': { line: 2, baseline: '2.0.0-next.39' },
-  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.50' },
-  '@solidjs/testing-library': { line: 1, baseline: '1.0.0-beta.3' },
+  'solid-js': { line: 2, baseline: '2.0.0-rc.17' },
+  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.17' },
+  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.17' },
+  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.17' },
+  '@solidjs/compiler': { line: 2, baseline: '2.0.0-rc.17' },
+  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0-rc.17' },
+  '@solidjs/router': { line: 2, baseline: '2.0.0-next.42' },
+  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.51' },
+  '@solidjs/testing-library': { line: 1, baseline: '1.0.0-rc.2' },
 };
 
 export function parseVersion(version) {
