@@ -24,7 +24,7 @@ export async function probe(h) {
   );
   const throwsOnUndefined = r.undefinedValue.error !== null && r.undefinedValue.got === 'unread';
   const nullIsValue = r.nullValue.error === null && r.nullValue.got === null;
-  const pointsAtNull = /createContext<T \| null>\(null\)|null/.test(r.undefinedValue.error ?? '');
+  const pointsAtNull = /createContext<T \| null>\(null\)/.test(r.undefinedValue.error ?? '');
   return {
     reproduces: throwsOnUndefined && nullIsValue && r.noProvider !== null && pointsAtNull,
     observed: `value={undefined}: ${r.undefinedValue.error ? `throws ${r.undefinedValue.error.slice(0, 140)}` : `read ${r.undefinedValue.got}`}; value={null}: ${r.nullValue.error ? `throws ${r.nullValue.error.slice(0, 80)}` : `read ${JSON.stringify(r.nullValue.got)}`}; no provider: ${r.noProvider ? r.noProvider.slice(0, 80) : 'no throw'}; message mentions the null form: ${pointsAtNull}`,
