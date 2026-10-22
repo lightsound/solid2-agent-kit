@@ -395,9 +395,10 @@ function effectSyncFindings(content) {
 }
 
 // Core `action` (solid-js) takes a generator (`function*` / `async function*`)
-// so `yield` can re-enter the transaction; router `action` (@solidjs/router)
-// legitimately takes `async (form) => ...`. Only flag `action(async` when this
-// file's `action` comes from "solid-js" — a router import (or none) stays silent.
+// so `yield` can re-enter the transaction; router `formAction` (@solidjs/router,
+// and its deprecated `action` alias) legitimately takes `async (form) => ...`.
+// Only flag `action(async` when this file's `action` comes from "solid-js" — a
+// router import (or none) stays silent.
 function actionAsyncFindings(content) {
   if (!/import\s*\{[^}]*\baction\b[^}]*\}\s*from\s*['"]solid-js['"]/.test(content)) return [];
   if (/import\s*\{[^}]*\baction\b[^}]*\}\s*from\s*['"]@solidjs\/router['"]/.test(content)) return [];
@@ -576,7 +577,8 @@ const CHECKS = [
   {
     id: 'solid1-classlist',
     pattern: /\bclassList=/g,
-    message: 'Solid 1.x `classList` was removed. Use the object/array form of `class`.',
+    message:
+      'Solid 1.x `classList` was removed (a compile error on native elements since 2.0.0-rc.17). Use the object/array form of `class`.',
   },
   {
     id: 'react-hook',
@@ -587,7 +589,7 @@ const CHECKS = [
   {
     id: 'solid1-api',
     pattern:
-      /(?<![.\w])(?:createResource|onMount|createMutable|modifyMutable|mergeProps|splitProps|produce|unwrap|createComputed|createSelector|createDeferred|startTransition|batch|onError|catchError|createDynamic|renderToStringAsync|clearDelegatedEvents)\s*\(/g,
+      /(?<![.\w])(?:createResource|onMount|createMutable|modifyMutable|mergeProps|splitProps|produce|unwrap|createComputed|createSelector|startTransition|batch|onError|catchError|createDynamic|renderToStringAsync|clearDelegatedEvents)\s*\(/g,
     message:
       'Removed Solid 1.x API. Replacements: async createMemo, onSettled, createStore drafts, merge/omit/snapshot, automatic batching, Errored, dynamic(), renderToStream.',
   },
@@ -688,7 +690,7 @@ const CHECKS = [
     pattern:
       /(?<=\s)(?:use|on|oncapture|attr|bool):[A-Za-z][\w-]*(?==|\s*\/?>|\s+(?!(?:as|satisfies|in|instanceof)\b(?!\s*=))[A-Za-z_${])/g,
     message:
-      'Solid 1.x JSX namespace. Use ref callbacks (and directive factories), camelCase event props, and standard attributes.',
+      'Solid 1.x JSX namespace — a compile error on native elements since 2.0.0-rc.17. Use ref callbacks (and directive factories), camelCase event props, and standard attributes; `prop:` remains for DOM properties.',
   },
   {
     id: 'solid1-router',
@@ -752,9 +754,9 @@ const CHECKS = [
   },
   {
     // Only `on` + uppercase binds an event: since rc.14 a lowercase `on*`
-    // attribute is a plain attribute (dev warns [LOWERCASE_EVENT_ATTRIBUTE]),
-    // and a 1.x `on:click` is a plain namespaced attribute — neither runs the
-    // handler. A real event name in lowercase is always a leftover. Anchored
+    // attribute is a plain attribute (dev warns [LOWERCASE_EVENT_ATTRIBUTE])
+    // that never runs the handler; a 1.x `on:click` on a native element is a
+    // compile error since rc.17 (solid1-jsx-namespace, above). A real event name in lowercase is always a leftover. Anchored
     // on `={` (a JSX expression attribute): `const onmessage = ...`,
     // `ws.onerror = fn`, and HTML strings (`onerror="…"`) are not matches,
     // and neither is a string expression (`onclick={"track()"}`) — a string
@@ -826,9 +828,43 @@ const CHECKS = [
     id: 'action-plain-async',
     find: actionAsyncFindings,
     message:
-      'Core `action` takes a generator (`function*` / `async function*`), not a plain async function — only `yield` re-enters the transaction, so writes after a bare `await` commit immediately. (Router `action` from "@solidjs/router" is the one that takes `async (form) => ...`.)',
+      'Core `action` takes a generator (`function*` / `async function*`), not a plain async function — only `yield` re-enters the transaction, so writes after a bare `await` commit immediately. (Router `formAction` from "@solidjs/router" is the one that takes `async (form) => ...`.)',
+  },
+  {
+    // `action` / `Action` from "@solidjs/router" are deprecated aliases of
+    // `formAction` / `FormAction` since 2.0.0-next.41 (dev warns on the first
+    // call); `action` is solid-js's own primitive.
+    id: 'router-action-alias',
+    find: (content) => routerImportFindings(content, ['action', 'Action']),
+    message:
+      'Router `action` / `Action` are deprecated aliases (@solidjs/router 2.0.0-next.41; dev warns). Import `formAction` / `FormAction` from "@solidjs/router" — `action` is solid-js\'s own primitive.',
+  },
+  {
+    // `useAction` is deprecated with no replacement: a mounted router applies a
+    // server function's revalidation and redirect on any call.
+    id: 'router-use-action',
+    find: (content) => routerImportFindings(content, ['useAction']),
+    message:
+      '`useAction` is deprecated (@solidjs/router 2.0.0-next.41; dev warns): outside a form, call the server function (or a core `action` from "solid-js") directly — the router applies its revalidation and redirect either way. Bind form actions to forms.',
   },
 ];
+
+// Named imports from "@solidjs/router" among `names`, located at the name inside
+// the import list. Only the imported name counts: `action as save` is flagged,
+// `formAction as action` (the local name) is not.
+function routerImportFindings(content, names) {
+  const findings = [];
+  for (const statement of content.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]@solidjs\/router['"]/g)) {
+    const list = statement[1];
+    const offset = statement.index + statement[0].indexOf(list);
+    for (const name of names) {
+      for (const match of list.matchAll(new RegExp(`(?<![\\w$.])(?<!\\bas\\s+)(?:type\\s+)?${name}(?![\\w$])`, 'g'))) {
+        findings.push({ index: offset + match.index });
+      }
+    }
+  }
+  return findings;
+}
 
 // .ts / .tsx / .jsx sources, excluding .d.ts declaration files.
 const SOURCE_FILE = /(?<!\.d)\.(?:tsx?|jsx)$/;
