@@ -22,9 +22,10 @@ export async function probe(h) {
   const pluginTypes = h.read('@solidjs/vite-plugin', 'dist/types/src/index.d.ts');
   const typed = /locations\?: boolean;/.test(compilerTypes) && /sourceNames\.locations/.test(compilerTypes) && /export function transformSourceNames\(/.test(compilerTypes);
   const pluginDocumented = /locations/.test(pluginTypes);
-  const printed = /\bloc\b/.test(h.read('@solidjs/signals', 'dist/dev.js'));
+  const shared = h.read('@solidjs/signals', 'dist/dev-shared.js');
+  const printed = /function locationLine\(/.test(shared) && /\\n  at \$\{locationLine\(/.test(shared);
   return {
     reproduces: r.component && r.binding && r.primitive && r.offHasNoLoc && typed && pluginDocumented && printed,
-    observed: `transform() emits locations: component 4th arg ${r.component}, binding loc ${r.binding}; transformSourceNames() primitive loc ${r.primitive}; off leaves none: ${r.offHasNoLoc}; compiler types declare both: ${typed}; plugin types mention it: ${pluginDocumented}; dev runtime reads loc: ${printed}`,
+    observed: `transform() emits locations: component 4th arg ${r.component}, binding loc ${r.binding}; transformSourceNames() primitive loc ${r.primitive}; off leaves none: ${r.offHasNoLoc}; compiler types declare both: ${typed}; plugin types mention it: ${pluginDocumented}; dev runtime prints an "at" line from loc: ${printed}`,
   };
 }

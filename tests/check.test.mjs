@@ -139,6 +139,20 @@ for (const [id, count] of [
   }
 }
 
+// Deprecated router names: the imported `action` and `Action`, and a re-export of
+// `action` from the `/data` subpath, are flagged (not the local alias `action`);
+// `useAction` once.
+const routerHits = (id) =>
+  [...output.matchAll(new RegExp(`router-deprecated\\.tsx:\\d+ \\[${id}\\]`, 'g'))].length;
+for (const [id, count] of [
+  ['router-action-alias', 3],
+  ['router-use-action', 1],
+]) {
+  if (routerHits(id) !== count) {
+    fail(`expected ${count} ${id} finding(s) in router-deprecated.tsx, saw ${routerHits(id)}`, violations);
+  }
+}
+
 // Explicit file mode: `check [paths...]` gates only the named sources.
 const singleBad = spawnSync(
   process.execPath,
