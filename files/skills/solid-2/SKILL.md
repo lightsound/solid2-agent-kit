@@ -460,6 +460,12 @@ return <StoryDetail story={story} />;
   `transition-delay` so fast swaps do not flash. Inputs that feed a request follow
   the same rule: bind `value={latest(query)}` so a controlled search box reflects
   keystrokes while its write is held (an uncontrolled input needs nothing).
+  When one write in a handler must *not* join the hold — closing a menu before
+  `props.onSelect` starts a navigation — defer just that write with
+  `onFlush(() => setOpen(false))` (since 2.0.0-rc.19): it runs once right after the
+  pending flush as its own update, instead of flushing early
+  <!-- upstream:on-flush -->. It belongs in event handlers and effect callbacks; in a
+  component body or computation dev warns `ON_FLUSH_IN_OWNED_SCOPE`.
 - Read every reactive input **before the first `await`** in an async computation. A read
   after `await` does not subscribe (dev reports `[UNTRACKED_READ_AFTER_AWAIT]` on V8 —
   Chromium, Node, Deno, Bun); production can sit pending with no retry.
@@ -569,7 +575,7 @@ For a callback subscription, an Observable, or an existing AsyncIterable, the ad
 built in: `from(source)` returns the async iterable a computation consumes —
 `createMemo(() => from(source))` <!-- upstream:from-source-adapts -->. Read the inputs that
 choose the source before calling it, so a change re-runs the memo, closes the old source,
-and opens the new one. The hand-rolled form below remains for what `from` does not fit —
+and opens the new one <!-- upstream:from-source-adapts -->. The hand-rolled form below remains for what `from` does not fit —
 an event stream where every message matters (keep a queue instead of conflating to the
 latest), or a subscribe signature that is not `(next, error, complete) => unsubscribe`:
 
