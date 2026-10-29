@@ -8,23 +8,29 @@ export async function probe(h) {
   const r = h.nodeJson(
     `import { createRoot, createSignal, createMemo, onFlush, isPending, flush } from "solid-js";
      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-     let api;
-     createRoot(() => {
-       const [nav, setNav] = createSignal(0);
-       const [open, setOpen] = createSignal(true);
-       const data = createMemo(async () => { const n = nav(); await sleep(30); return n; });
-       createMemo(() => { try { return data(); } catch { return undefined; } });
-       api = { setNav, open, setOpen, data };
-     });
-     await sleep(50); flush();
-     let ran = 0;
-     onFlush(() => { ran += 1; api.setOpen(false); });
-     api.setNav(1); flush();
-     const atFlush = { ran, open: api.open() };
-     await sleep(0); flush();
-     const after = { ran, open: api.open(), dataPending: isPending(() => api.data()) };
-     await sleep(60); flush();
-     console.log(JSON.stringify({ exported: typeof onFlush, atFlush, after, ranLater: ran }));
+     async function scenario(useOnFlush) {
+       let api;
+       createRoot(() => {
+         const [nav, setNav] = createSignal(0);
+         const [open, setOpen] = createSignal(true);
+         const data = createMemo(async () => { const n = nav(); await sleep(30); return n; });
+         createMemo(() => { try { return data(); } catch { return undefined; } });
+         api = { setNav, open, setOpen, data };
+       });
+       await sleep(50); flush();
+       let ran = 0;
+       if (useOnFlush) onFlush(() => { ran += 1; api.setOpen(false); });
+       else api.setOpen(false);
+       api.setNav(1); flush();
+       const atFlush = { ran, open: api.open() };
+       await sleep(0); flush();
+       const after = { ran, open: api.open(), dataPending: isPending(() => api.data()) };
+       await sleep(60); flush();
+       return { atFlush, after, ranLater: ran };
+     }
+     const flushed = await scenario(true);
+     const plain = await scenario(false);
+     console.log(JSON.stringify({ exported: typeof onFlush, flushed, plain }));
      process.exit(0);`,
     { conditions: ['browser', 'development'] },
   );
@@ -35,17 +41,23 @@ export async function probe(h) {
     { conditions: ['browser', 'development'] },
   );
   const warned = w.stderr.includes('[ON_FLUSH_IN_OWNED_SCOPE]');
+  const f = r.flushed;
+  const p = r.plain;
   return {
     reproduces:
       typed &&
       r.exported === 'function' &&
-      r.atFlush.ran === 0 &&
-      r.atFlush.open === true &&
-      r.after.ran === 1 &&
-      r.after.open === false &&
-      r.after.dataPending === true &&
-      r.ranLater === 1 &&
+      // Control: a plain write in the frame lands with that frame's flush.
+      p.atFlush.open === false &&
+      // The onFlush write does not: it is a separate, later update ...
+      f.atFlush.ran === 0 &&
+      f.atFlush.open === true &&
+      // ... that lands on its own while the frame's async work is still pending.
+      f.after.ran === 1 &&
+      f.after.open === false &&
+      f.after.dataPending === true &&
+      f.ranLater === 1 &&
       warned,
-    observed: `signature typed: ${typed}; runtime export ${r.exported}; at the registering frame's flush: ran ${r.atFlush.ran}, open ${r.atFlush.open}; after it: ran ${r.after.ran}, its write landed (open ${r.after.open}) while the same frame's async memo was still pending (${r.after.dataPending}); ran exactly once (${r.ranLater}); ON_FLUSH_IN_OWNED_SCOPE in a computation: ${warned}`,
+    observed: `signature typed: ${typed}; runtime export ${r.exported}; control (plain write): landed with the frame's flush (open ${p.atFlush.open}); onFlush arm: at the registering frame's flush ran ${f.atFlush.ran}, open ${f.atFlush.open}; after it: ran ${f.after.ran}, its write landed (open ${f.after.open}) while the same frame's async memo was still pending (${f.after.dataPending}); ran exactly once (${f.ranLater}); ON_FLUSH_IN_OWNED_SCOPE in a computation: ${warned}`,
   };
 }
