@@ -44,6 +44,7 @@ const REQUIRED_APIS = [
   'untrack',
   'action',
   'affects',
+  'from',
   'refresh',
   'resolve',
   'until',
