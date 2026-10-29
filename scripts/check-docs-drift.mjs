@@ -38,12 +38,14 @@ const REQUIRED_APIS = [
   // reactivity / lifecycle
   'onSettled',
   'onCleanup',
+  'onFlush',
   'isPending',
   'latest',
   'flush',
   'untrack',
   'action',
   'affects',
+  'from',
   'refresh',
   'resolve',
   'until',
@@ -194,7 +196,17 @@ const allApis = [...new Set([...createApis, ...REQUIRED_APIS])].sort();
 // or a call (name(). A comma is not a context — prose lists (", why reads
 // have to", "costs, holds, feedback") match it, and no entry needs it: an
 // import-list member follows `{` or is backticked somewhere in the docs.
+//
+// `from` is stricter still: the generic pattern cannot tell an opening
+// backtick from a closing one, and docs prose is full of "`X` from
+// `solid-js`", so the loose contexts are vacuous for it. Only the call form
+// counts — the reference page's own `createMemo(() => from(source))` and its
+// examples are what keep this entry honest.
+const STRICT_PATTERNS = new Map([['from', /\bfrom\(/]]);
+
 function appearsAsCode(name) {
+  const strict = STRICT_PATTERNS.get(name);
+  if (strict) return strict.test(corpus);
   return new RegExp(`[\`{<]\\s*${name}\\b|\\b${name}\\s*\\(`).test(corpus);
 }
 

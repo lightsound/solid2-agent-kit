@@ -19,14 +19,14 @@
 // pulls them in — so doctor also checks an undeclared install of any package
 // here, which is where a lockfile holds an older compiler.
 export const BASELINE = {
-  'solid-js': { line: 2, baseline: '2.0.0-rc.17' },
-  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.17' },
-  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.17' },
-  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.17' },
-  '@solidjs/compiler': { line: 2, baseline: '2.0.0-rc.17' },
-  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0-rc.17' },
-  '@solidjs/router': { line: 2, baseline: '2.0.0-next.42' },
-  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.51' },
+  'solid-js': { line: 2, baseline: '2.0.0-rc.19' },
+  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.19' },
+  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.19' },
+  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.19' },
+  '@solidjs/compiler': { line: 2, baseline: '2.0.0-rc.19' },
+  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0-rc.19' },
+  '@solidjs/router': { line: 2, baseline: '2.0.0-next.43' },
+  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.52' },
   '@solidjs/testing-library': { line: 1, baseline: '1.0.0-rc.2' },
 };
 
