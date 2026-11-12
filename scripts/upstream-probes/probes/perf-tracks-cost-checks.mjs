@@ -5,11 +5,11 @@ export const packages = ['@solidjs/web', '@solidjs/vite-plugin', '@solidjs/signa
 export async function probe(h) {
   const types = h.read('@solidjs/web', 'performance-tracks/types/index.d.ts');
   const tracks = h.read('@solidjs/web', 'performance-tracks/dist/performance-tracks.dev.js');
-  const plugin = h.read('@solidjs/vite-plugin', 'dist/cjs/index.cjs');
+  const plugin = h.read('@solidjs/vite-plugin', 'dist/esm/index.mjs');
   const engine = h.read('@solidjs/signals', 'dist/types/core/attribution.d.ts');
   const attributionOption = /attribution\?: AttributionOptions/.test(types);
   const offByDefault = /checks: options\.attribution\?\.checks \?\? false/.test(tracks);
-  const passedThrough = /function resolvePerformanceTracksOptions\(option\) \{\s*if \(option === false\) return null;\s*if \(option === true \|\| option === undefined\) return \{\};\s*return option;\s*\}/.test(plugin);
+  const passedThrough = /function resolvePerformanceTracksOptions\(option\) \{\s*if \(option === false\) return null;\s*if \(option === true \|\| option === (?:undefined|void 0)\) return \{\};\s*return option;\s*\}/.test(plugin);
   const engineDefaultOn = /`fanOut`, `wastedRecompute` \(default true\)/.test(engine);
   return {
     reproduces: attributionOption && offByDefault && passedThrough && engineDefaultOn,

@@ -1,5 +1,5 @@
 export const claim =
-  '`start: { middleware }` default-exports `(event, next) => Response` (`StartMiddleware`, exported from `@solidjs/vite-plugin`): the request is `event.request`, `next()` takes no arguments (assign `event.request` to substitute it), and per-request `event.nonce` / `event.renderMode` are set before `next()`. Before 3.0.0-next.48 it was a fetch-style `(request, next)`.';
+  '`start: { middleware }` default-exports `(event, next) => Response` (`StartMiddleware`, exported from `@solidjs/vite-plugin`): the request is `event.request`, `next()` takes no arguments (assign `event.request` to substitute it), and per-request `event.nonce` / `event.renderMode` are set before `next()`. The event type is `StartRequestEvent` (renamed from `RequestEvent` by 3.0.0-next.57). Before 3.0.0-next.48 it was a fetch-style `(request, next)`.';
 export const packages = ['@solidjs/vite-plugin'];
 
 export async function probe(h) {
@@ -9,8 +9,8 @@ export async function probe(h) {
   const eventForm = /`\(event, next\) => Response\s*\*?\s*\| Promise<Response>`, the request at `event\.request`/.test(ssr);
   const noArgs = /`next\(\)` advances the\s*\*?\s*chain and takes no arguments/.test(ssr);
   const renderInputs = /`event\.nonce`/.test(ssr) && /`event\.renderMode`/.test(ssr);
-  const typed = /export type StartMiddleware = \(event: RequestEvent, next: \(\) => Promise<Response>\) =>/.test(event) &&
-    /export type \{ StartMiddleware \} from '\.\/request-event\.js'/.test(index);
+  const typed = /export type StartMiddleware = \(event: StartRequestEvent, next: \(\) => Promise<Response>\) =>/.test(event) &&
+    /export type \{ StartMiddleware,/.test(index) && /from '\.\/request-event\.js'/.test(index);
   const fetchStyleGone = !/fetch-style middleware function — `\(request,/.test(ssr);
   return {
     reproduces: eventForm && noArgs && renderInputs && typed && fetchStyleGone,
