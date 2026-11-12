@@ -333,6 +333,13 @@ intercepted with the bundle form `createEffect(compute, { effect, error })`. Ski
 initial run with `{ defer: true }` — the `on(deps, fn, { defer: true })` replacement;
 the effect first runs on the next change.
 
+When the side effect should fire **once per arming** rather than on every change —
+"run this the first time the value crosses the threshold" — use `createReaction(fn)`
+from `solid-js`: it returns a tracker; `fn` runs once after a source read inside a
+`track(() => …)` call changes, then stays silent until the tracker is called again
+(re-arm from inside `fn` to keep listening). Nothing runs at creation, and changes
+made while unarmed are ignored. <!-- upstream:create-reaction -->
+
 A two-phase effect whose apply only calls a local signal setter is "state + effect" in
 disguise — formally legal Solid 2, still rule 4 (`solid2-kit check` flags it). The reset
 form of a writable derivation replaces it, and moves the source read to the read site
@@ -558,7 +565,7 @@ functions (middleware, request setup) reported via
 `renderToString` / `renderToStream`'s first pass is reported `render` / `failed`
 before rethrow. <!-- upstream:report-request-failure --> A monitoring SDK's `init()` that
 registers this hook must load before the server graph — put it in the plugin's
-`start: { instrument: "./src/instrument.ts" }`, not at the top of an entry (see
+`start: { serverSetup: "./src/instrument.ts" }`, not at the top of an entry (see
 [Production observability](#production-observability-the-observe-build)).
 
 `render` / `hydrate` accept a per-root `onError` that wins over the ambient hook —
@@ -1596,10 +1603,15 @@ production too (observe build; a no-op on the prod build).
 - **Instrumentation order.** A monitoring SDK's `init()` (and `configureServerErrors`)
   must run before the modules it patches load. `import "./instrument"` at the top of an
   entry does not achieve that in ESM (static imports are hoisted in dependency order);
-  the plugin's `start: { instrument: "./src/instrument.ts" }` awaits that server-only
-  module before anything else in the server graph — since vite-plugin 3.0.0-next.51 the
-  `node` entry too: `dist/server/node.js` awaits `./server.js` (which awaits the
-  instrument module) and then loads `node-runtime.js`, so deploy both files. Failures the
+  the plugin's `start: { serverSetup: "./src/instrument.ts" }` awaits that server-only
+  module before anything else in the server graph — the `node` entry too:
+  `dist/server/node.js` awaits `./server.js` (which awaits the
+  setup module) and then loads `node-runtime.js`, so deploy both files. The option was
+  renamed from `start.instrument` between vite-plugin next.52 and next.57 — the plugin
+  throws on the old key <!-- upstream:start-server-setup -->. The sibling seam
+  `start: { serverRenderSetup: "./src/render-setup.ts" }` runs per request immediately
+  before SSR — `(event, App) => Component | void` — for integrations that must prepare
+  a per-request app instance before the render. Failures the
   handler contains itself reach the hook as `{ kind: "request", handling: "failed" }`.
   The client-side counterpart is `start: { clientSetup: "./src/client-setup.ts" }`: a
   browser module run (and awaited, top-level `await` allowed) before `hydrate` / `render`,
@@ -1731,7 +1743,10 @@ plain `<a href={Router.paths.about}>` (or `useNavigate`); there is no `<A>` /
 `<Navigate>` / `<HashRouter>` / `<FileRoutes />`. Do not assign
 `window.location.href` or call `history.pushState` for in-app navigation.
 Session location is `useLocation` / `useParams`,
-not `Router.paths`.
+not `Router.paths`. `useMatch(() => "/docs/:page")` tests a pattern against the
+current pathname without a route existing for it — the memo answers the match (params
+typed from the pattern) or nothing; that is the breadcrumb / section-highlight read
+<!-- upstream:router-use-match -->.
 
 **Route `preload` starts reads; the page reads them in a memo.** `preload` runs when
 the route matches (and ahead of a click under a `preloadLinks` strategy <!-- upstream:preload-links-opt-in -->), so it should kick off the query and return
@@ -2085,7 +2100,11 @@ producing after 5s is `[SSR_UNDECLARED_LIVE_SOURCE]` in dev — declare it `live
 document takes the first value and closes it; the client connects after hydration) or
 bound the source. `broadcast(fn)` is `live()` for one answer shared across
 every viewer — the server runs the generator once per argument set instead of once per
-connection.
+connection. In a router app, `liveQuery(fn, "key")` from `@solidjs/router` declares
+the `live()` server function itself and keeps one connection per key, shared by every
+consumer — when several components need the same stream, declare it once with
+`liveQuery` instead of hoisting a hand-rolled `live()` declaration and sharing code
+<!-- upstream:router-live-query -->.
 
 ```ts
 // src/data/auction.ts
@@ -2329,7 +2348,7 @@ how to reuse. Prefer the form on the right.
 | `attribution.enable()` unguarded in app code, or `enable()` with the default `log: true` left on | `if (isDev) attribution.enable({ log: false })` — on the observe build an unguarded `enable()` records in production; prefer the `/__solid/diagnostics` session (`begin` enables, `end` disables) so app code carries nothing |
 | `solid({ observe: true })` added "to see diagnostics in dev" | `vite dev` is always the dev build; `observe: true` is the production-observability opt-in (observe condition + `sourceNames` for `vite build`/preview <!-- upstream:source-names-option -->) |
 | `configureServerErrors({ onError: (e) => { report(e); return e; } })` | return nothing or a reference (`new Error(\`ref ${id}\`)`) — the return value replaces the sanitized wire value; the error itself leaks message/stack/secrets |
-| `import "./instrument"` at the top of the server entry for a monitoring SDK | `start: { instrument: "./src/instrument.ts" }` — ESM hoists static imports in dependency order, so the entry's own deps load first (next.51 wraps the `node` entry too: deploy `node.js` with `server.js`). Browser-side init before `hydrate` / `render` is `start: { clientSetup: "./src/client-setup.ts" }` |
+| `import "./instrument"` at the top of the server entry for a monitoring SDK | `start: { serverSetup: "./src/instrument.ts" }` — ESM hoists static imports in dependency order, so the entry's own deps load first (the `node` entry wraps it too: deploy `node.js` with `server.js`; the pre-rename spelling `start.instrument` throws in the plugin). Browser-side init before `hydrate` / `render` is `start: { clientSetup: "./src/client-setup.ts" }` |
 | Express/middleware injecting `traceparent` / trace headers into responses | the runtime carries a sampled or provided trace on `Server-Timing` + `<meta>`; forward downstream with `getTraceContext()?.entries`; SDKs use `OBSERVE?.server.trace.provide` |
 | `OBSERVE.records.subscribe("call", (e) => setStats(...))` | listeners run synchronously inside the runtime and must not write signals; collect into a plain buffer and drain from outside |
 | `import { storePath } from "solid-js"` | gone from `solid-js` (rc.9); write draft setters `setState((d) => { d.user.name = "Grace"; })` <!-- upstream:store-path-removed --> |
