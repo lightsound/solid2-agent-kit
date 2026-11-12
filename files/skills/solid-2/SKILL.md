@@ -307,7 +307,10 @@ returns the value it set. Dev throws `effect callback returned an invalid cleanu
 production throws a `TypeError` on the next run, and both halt the whole
 reactive system (`[REACTIVITY_HALTED]`). TypeScript reports it as TS2345; a JS project
 gets no warning. The cleanup of an effect is the `apply` return value — `onCleanup`
-inside `apply` has no owner and never runs (`[NO_OWNER_CLEANUP]`).
+inside `apply` has no owner and never runs (`[NO_OWNER_CLEANUP]`). The two-phase
+signature itself is enforced: `createEffect(compute)` with no apply function throws
+`[MISSING_EFFECT_FN]` in dev <!-- upstream:missing-effect-fn --> (prod dies on the same call with an uncoded
+`TypeError`).
 
 **Effects never compare.** `apply` runs on every re-run of `compute`, whether or not the
 computed value changed; there is no `equals` on an effect. When equal results should skip
@@ -452,7 +455,9 @@ return <StoryDetail story={story} />;
   `affects(item, "quantity")`) or `isPending(() => todos.length)` dims only what
   that read depends on. A hold with no feedback at all is `[SILENT_HOLD]` under
   attribution — always pair a held write with one of these questions, an
-  optimistic value, or `affects()`.
+  optimistic value, or `affects()`. `affects` keys address store leaves only:
+  `affects(accessor, "quantity")` throws `[INVALID_AFFECTS_TARGET]` in dev
+  <!-- upstream:invalid-affects-target --> — the keyed form needs a store (or store row); a bare accessor takes no key.
 - Default navigation **holds**. `selectedId()` and the old story stay put until
   the new answer lands, so the highlight never points at the wrong content.
   `latest(selectedId)` is the opt-in when the design wants the highlight to move
@@ -478,7 +483,9 @@ return <StoryDetail story={story} />;
   `fallback={(error, reset) => ...}`. The boundary **heals** when the source succeeds
   again (refresh, live reconnect, input change) — it is graph status, not a terminal
   React ErrorBoundary. `reset` retries the collected *data sources*, not a UI remount.
-- Refetch: `refresh(results)`. In-flight indicator: `isPending(results)` (or
+- Refetch: `refresh(results)`. `refresh` takes a source accessor or a refreshable
+  store only — anything else (a plain function included) throws `[INVALID_REFRESH_TARGET]`
+  in dev <!-- upstream:invalid-refresh-target -->, and prod silently accepts it. In-flight indicator: `isPending(results)` (or
   `isPending(() => results())`). Freshest in-flight value for a preview:
   `latest(results)`. `latest` is not a null-safe probe: before the source's first value
   it throws `NotReadyError` in every scope (since 2.0.0-rc.9 also in event handlers and
@@ -755,7 +762,8 @@ list). An in-flight action does not freeze unrelated writes. Collecting failed
 actions to replay is a design choice, not something the runtime requires.
 
 Ordinary signal/store writes inside an action are held until it settles. Never call
-`flush()` inside an action. Invoke actions from handlers, not from component/computation bodies.
+`flush()` inside an action. Invoke actions from handlers, not from component/computation bodies (dev warns
+`[ACTION_CALLED_IN_OWNED_SCOPE]` <!-- upstream:action-in-owned-scope -->).
 Do not set a `submitted` signal and watch it from an effect — that work belongs in the
 handler or the `action`.
 
@@ -767,7 +775,9 @@ leaves an empty list once the action settles, with no warning. <!-- upstream:opt
 from the function form — `createOptimisticStore(() => api.list(), [])` refreshed
 after the `yield`, or `createOptimisticStore(() => base.todos, [])` over a separate
 `createStore` that the action writes the confirmed value into. Keep the value form for
-in-flight flags.
+in-flight flags. A write against a function-form source whose first answer has not
+landed yet is not guessed at all — dev warns `[OPTIMISTIC_WRITE_BEFORE_LOAD]`
+<!-- upstream:optimistic-write-before-load -->; let the first answer land before writing.
 
 `createOptimistic` / `createOptimisticStore` are for a tentative value during an
 active mutation, not a local editing session (use a writable derivation or a plain
@@ -1092,7 +1102,11 @@ do not `return () => cleanup`. Put owned setup in a **directive factory** (like
 `onCleanup` throws there (`[CLEANUP_IN_FORBIDDEN_SCOPE]`), creating a memo or effect
 throws (`[PRIMITIVE_IN_FORBIDDEN_SCOPE]`), and so does `flush()` — each halts the
 reactive system in dev. Return the cleanup; create effects and memos in the component
-body, next to the `onSettled` call, not inside it.
+body, next to the `onSettled` call, not inside it. A pending async read inside the
+callback warns `[PENDING_ASYNC_FORBIDDEN_SCOPE]` <!-- upstream:pending-async-forbidden-scope --> — the callback is not a
+computation, so nothing re-runs it when the answer lands. Register `onSettled` in the
+body, not out-of-band after an `await`: a cleanup returned from an unowned registration
+warns `[SETTLED_CLEANUP_UNOWNED]` <!-- upstream:settled-cleanup-unowned --> and never runs.
 
 ```tsx
 // WRONG — the mechanical 1.x port of onMount + onCleanup
@@ -1116,6 +1130,12 @@ dispose them; `runWithOwner(null, …)` does not lift it): create them in the
 component body or the compute phase, or attach them to an owner captured with
 `getOwner()` in the body via `runWithOwner(owner, …)`.
 <!-- upstream:primitive-in-effect-callback -->
+
+`createOwner` is not public API: since rc.21 it is typed only through
+`solid-js/internal`, as a runtime export kept for the renderers
+<!-- upstream:create-owner-internal -->. Host a scope with `createRoot()` and pass its `dispose` argument
+around as a plain function (a detached `owner.dispose` is a method and throws unbound
+<!-- upstream:ownerless-and-disposed -->); re-enter the scope with `runWithOwner(owner, …)`.
 
 ### Per-value SSR policy: `ssrSource`
 
@@ -1246,13 +1266,23 @@ Always-on dev checks include misplaced reads
 for a first read made after an `await` in an async compute — V8 engines only), misplaced writes
 (`[REACTIVE_WRITE_IN_OWNED_SCOPE]` — since rc.9 also for store setters called in a
 component or root body <!-- upstream:store-write-owned-scope -->, `[ASYNC_STORE_SETTER]` for a store setter callback that returns
-a promise <!-- upstream:async-store-setter-throws -->, `[FLUSH_IN_ACTION]`, `[SERVER_WRITE]`,
+a promise <!-- upstream:async-store-setter-throws -->, `[FLUSH_IN_ACTION]`,
+`[ACTION_CALLED_IN_OWNED_SCOPE]` for an `action()` invoked from a component body or
+computation <!-- upstream:action-in-owned-scope -->, `[SERVER_WRITE]`,
 and since rc.17 `[STORE_WRITE_OUTSIDE_SETTER]` for a write to the store proxy itself
 <!-- upstream:store-write-outside-setter -->), misplaced bindings
 (`[UNCOMMITTED_INPUT_OVERWRITTEN]` — a `value` / `checked` binding re-applied its
 committed value over uncommitted user input <!-- upstream:uncommitted-input-overwritten -->),
-`[ASYNC_OUTSIDE_LOADING_BOUNDARY]` when a tracked read has no boundary above it, and
-`[LOADING_ON_OUTSIDE_HOLD]` when a `<Loading on>` boundary's data is also read outside it.
+`[ASYNC_OUTSIDE_LOADING_BOUNDARY]` when a tracked read has no boundary above it,
+`[LOADING_ON_OUTSIDE_HOLD]` when a `<Loading on>` boundary's data is also read outside it,
+`[LOADING_ON_ACCESSOR]` when a `<Loading on>` receives a function instead of the value
+(the boundary never calls it, so it never re-arms; since rc.20) <!-- upstream:loading-on-accessor -->, and
+since rc.21 `[CAUGHT_REACTIVE_READ]` when a computation catches a reactive read's throw
+itself and completes with a value — the catch masks the load or hides the error from the
+boundaries <!-- upstream:caught-reactive-read -->. Ownerless creation warns rather than throws: `[NO_OWNER_EFFECT]`
+for an effect created outside any root or component, `[NO_OWNER_BOUNDARY]` for a
+boundary invoked outside a reactive context, and `[RUN_WITH_DISPOSED_OWNER]` for
+`runWithOwner` on a disposed owner <!-- upstream:ownerless-and-disposed --> — none of them is ever disposed.
 Each entry carries a stable `[CODE]`, what the runtime observed, an owner chain
 (`in <App> › <Cart> › <LineItem>`), and — since rc.16, under `vite dev` — an
 `at src/Cart.tsx:12:5` line naming where the scope was created (the compiler's
@@ -1344,7 +1374,8 @@ first), `[ABANDONED_FLIGHTS]` (a source re-asked on every keystroke, answers thr
 — debounce at the handler), `[STACKED_HOLDS]` (repeated clicks piling into one hold),
 `[FALLBACK_FLASH]` (a fallback shown under 150ms), `[WASTED_RECOMPUTE]` (a scope whose
 runs mostly compared equal — narrow its reads upstream), `[GRAPH_GROWTH]` (the graph grows
-on every visit to a route — an undisposed root or subscription), and `[OPTIMISTIC_REVERTED]`
+on every visit to a route — an undisposed root or subscription), `[HOT_SCOPE_FANOUT]`
+(many scopes hot from one root cause), and `[OPTIMISTIC_REVERTED]`
 (info: a guess the screen showed was replaced). `costs()` and `feedback()` (named imports)
 rank the session worst-first; `attribution.history("hold")` / `("waterfall")` /
 `("navigation")` / `("interaction")` hold the fact tables behind the verdicts (each hold
@@ -2052,7 +2083,7 @@ every POST call as one). `live(GET(fn))` is the same declaration spelled out —
 component rendered into a document that reads an *undeclared* async iterable still
 producing after 5s is `[SSR_UNDECLARED_LIVE_SOURCE]` in dev — declare it `live()` (the
 document takes the first value and closes it; the client connects after hydration) or
-bound the source. `broadcast(fn)` (experimental) is `live()` for one answer shared across
+bound the source. `broadcast(fn)` is `live()` for one answer shared across
 every viewer — the server runs the generator once per argument set instead of once per
 connection.
 
@@ -2190,7 +2221,7 @@ how to reuse. Prefer the form on the right.
 | `createEffect(() => user, (u) => { log(u.name); })` | `createEffect(() => user.name, (name) => { log(name); })` |
 | `createEffect(() => title(), (t) => (document.title = t))` / `(v) => setX(v)` | `(t) => { document.title = t; }` — apply returns a cleanup or nothing; any other return value halts reactivity. An apply that only calls a local setter is rule 4 even with braces (`solid2-kit check` flags it): use a (writable) derivation |
 | `<Loading fallback={<PageSkeleton />}>{/* header + data */}</Loading>` | wrap only the data slot; chrome stays outside |
-| `<Loading on={id} fallback={...}>` (the accessor), or `` on={`${a()}/${b()}`} `` to key several inputs | `on={id()}` / `on={[a(), b()]}` — `on` is a tracked dependency list, not a compared key: a bare accessor is never read (`solid2-kit check` flags it), and an array is the several-inputs form <!-- upstream:loading-on-dependency-list --> |
+| `<Loading on={id} fallback={...}>` (the accessor), or `` on={`${a()}/${b()}`} `` to key several inputs | `on={id()}` / `on={[a(), b()]}` — `on` is a tracked dependency list, not a compared key: a bare accessor is never read (`solid2-kit check` flags it; dev warns `[LOADING_ON_ACCESSOR]` since rc.20 <!-- upstream:loading-on-accessor -->), and an array is the several-inputs form <!-- upstream:loading-on-dependency-list --> |
 | `setCount(count() + 1)` when writes can batch | `setCount((c) => c + 1)` |
 | `setHandler(fn)` to store a function | `setHandler(() => fn)` (otherwise `fn` is an updater) |
 | `{user() ? <P user={user()!} /> : <SignIn />}` | `<Show when={user()}>{(u) => <P user={u()} />}</Show>` |

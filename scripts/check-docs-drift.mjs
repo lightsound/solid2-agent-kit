@@ -141,6 +141,10 @@ const BANNED_CREATE = new Set([
   'createDynamic',
   'createAsync',
   'createAsyncStore',
+  // Not banned, but no longer public API: since rc.21 `createOwner` is typed
+  // only through `solid-js/internal`, so the docs corpus no longer lists it;
+  // the kit names it to steer code to `createRoot` / `runWithOwner`.
+  'createOwner',
 ]);
 
 // User-defined custom primitives that appear in kit examples (idiomatically
