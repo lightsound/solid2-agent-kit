@@ -2,7 +2,7 @@
 // post-edit findings, the pre-execution guard, and the Stop gate.
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { SOURCE_FILE, fileFindings, walk } from './check.mjs';
 import { BANNED_DEPS, doctorFindings } from './doctor.mjs';
 
@@ -47,14 +47,52 @@ function collectSourcePaths(value, found = new Set()) {
 }
 
 // Path-shaped tokens ending in a source extension, resolved against the
-// command's cwd. Existence filtering keeps false positives at zero.
+// command's cwd. Existence filtering keeps false positives at zero. Two
+// shapes need more than the literal token: glob patterns (`src/*.tsx` —
+// the literal path never exists, so expand against the filesystem) and
+// quoted paths containing spaces (invisible to the token scan, so quoted
+// segments are tried as tokens of their own).
+function globToRegExp(glob) {
+  const body = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*\//g, '\u0001')
+    .replace(/\*\*/g, '\u0000')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\u0000/g, '.*')
+    .replace(/\u0001/g, '(?:.*/)?');
+  return new RegExp(`^${body}$`);
+}
+
+function addCommandToken(token, cwd, found) {
+  if (/[*?]/.test(token)) {
+    // A glob token never ends in a literal extension when the wildcard sits
+    // after it (`src/App.ts?`), so test the source shape with the wildcards
+    // blanked to a placeholder character instead.
+    if (!isCheckableSource(token.replace(/[*?]/g, 'x'))) return;
+    const firstWild = token.search(/[*?]/);
+    const slash = token.lastIndexOf('/', firstWild);
+    const base = resolve(cwd, slash === -1 ? '.' : token.slice(0, slash));
+    if (!existsSync(base)) return;
+    const pattern = globToRegExp(token.replace(/^\.\//, ''));
+    for (const file of walk(base)) {
+      const candidate = token.startsWith('/') ? file : relative(cwd, file);
+      if (pattern.test(candidate)) found.add(file);
+    }
+    return;
+  }
+  if (!isCheckableSource(token)) return;
+  const path = resolve(cwd, token);
+  if (existsSync(path)) found.add(path);
+}
+
 function collectCommandPaths(command, cwd, found = new Set()) {
   if (typeof command !== 'string') return found;
-  for (const match of command.matchAll(/[^\s'"`;|&()<>=]+\.(?:tsx?|jsx)\b/g)) {
-    const token = match[0];
-    if (!isCheckableSource(token)) continue;
-    const path = resolve(cwd, token);
-    if (existsSync(path)) found.add(path);
+  for (const match of command.matchAll(/[^\s'"`;|&()<>=]+\.(?:tsx?|jsx)\b[*?]?/g)) {
+    addCommandToken(match[0], cwd, found);
+  }
+  for (const quoted of command.matchAll(/'([^'\n]+)'|"([^"\n]+)"/g)) {
+    addCommandToken(quoted[1] ?? quoted[2], cwd, found);
   }
   return found;
 }
@@ -78,18 +116,166 @@ const GUARDRAIL_PATH =
   /\.cursor\/rules\/solid-2\.mdc|(?:\.cursor|\.claude)\/skills\/solid-2|(?:\.cursor|\.claude)\/commands\/solid2-review\.md|node_modules\/solid2-agent-kit\//;
 const MARKER_FILE = /(?:\.claude\/settings\.json|\.cursor\/hooks\.json|AGENTS\.md|CLAUDE\.md)$/;
 const KIT_MARKER = 'solid2-agent-kit';
-const SHELL_WRITE = /\b(?:rm|mv|cp|sed|tee|truncate|unlink|chmod|perl|python[\d.]*)\b|>>?/;
-const INSTALL_CMD = /\b(?:npm|pnpm|yarn|bun)\s+(?:-\S+\s+)*(?:install|add|i)\b/;
+// Write-capable shell shapes: the classic file verbs, a redirect, or an
+// interpreter running inline code (`node -e`, `python -c`, `deno eval`, …).
+// An interpreter is guaranteed to exist wherever this kit runs, so a verb
+// list alone would leave the most available rewrite tool uninspected.
+const SHELL_WRITE =
+  /\b(?:rm|mv|cp|sed|tee|truncate|unlink|chmod|dd|install|rsync|ed|perl|python[\d.]*)\b|\b[gm]?awk\b[^;&|]*-i\s+inplace\b|>>?/;
+const SHELL_EVAL =
+  /\b(?:node|bun|deno|ruby|php|perl|python[\d.]*)\b[^;&|]*(?:\s-e\b|\s-c\b|--eval\b|\beval\b)/;
 
 const TAMPER_MESSAGE =
   'solid2-agent-kit guardrail: this file is kit-managed Solid 2.0 guidance/enforcement. Do not edit, weaken, or delete it — fix the flagged code instead. Kit files update via `solid2-kit sync`. If you believe the guardrail itself is wrong, or the user explicitly wants it removed, stop and tell the user.';
 
+// A protected path can be hidden from a literal regex test: split across
+// simple same-command variable assignments (`P=.claude/settings.json;
+// sed -i '' $P`) or padded with redundant separators (`.claude//x`,
+// `./.claude/x`). Expand the simple assignments and collapse the
+// separators so the path checks see the path the shell will actually use.
+// Only the expanded copy is tested — the command itself is never altered.
+function expandShellVars(command) {
+  const vars = new Map();
+  for (const match of command.matchAll(
+    /(?:^|[\n;&|(]\s*)([A-Za-z_][A-Za-z0-9_]*)=(?:'([^']*)'|"([^"]*)"|([^\s;&|]+))/g,
+  )) {
+    vars.set(match[1], match[2] ?? match[3] ?? match[4]);
+  }
+  // A for-loop header binds its variable to the list (`for f in
+  // .claude/settings.json; do rm $f; done`) — record the list as the
+  // value so uses of the variable expand to the paths it can carry.
+  for (const match of command.matchAll(/\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+([^;&|]+)/g)) {
+    vars.set(match[1], match[2].trim());
+  }
+  let expanded = command;
+  for (const name of [...vars.keys()].sort((a, b) => b.length - a.length)) {
+    expanded = expanded.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`, 'g'), vars.get(name));
+  }
+  // Backslash-escaped separators in an unquoted path name the same file
+  // (`rm .claude\/settings.json`), so unescape them before testing.
+  return expanded
+    .replace(/(^|[\s'"])\.\//g, '$1')
+    .replace(/\/{2,}/g, '/')
+    .replace(/\\([/.])/g, '$1');
+}
+
+// Split a command into its sequence segments on &&, || and ; outside
+// quotes, so a separator inside a quoted string (a sed script, an
+// inline-eval body) never cuts a segment in half. Pipelines stay whole:
+// data flows through a pipeline, so a path mentioned on the left of a `|`
+// still reaches the write verb on its right (`… | xargs rm`). Backslash
+// escapes are honored everywhere except inside single quotes (where the
+// shell treats a backslash literally), so an escaped quote cannot fake
+// the end of a quoted string.
+function splitSegments(command) {
+  const segments = [];
+  let current = '';
+  let quote = null;
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i];
+    if (ch === '\\' && quote !== "'") {
+      current += ch + (command[i + 1] ?? '');
+      i += 1;
+    } else if (quote !== null) {
+      current += ch;
+      if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      current += ch;
+    } else if (ch === ';') {
+      segments.push(current);
+      current = '';
+    } else if (ch === '&' && command[i + 1] === '&') {
+      segments.push(current);
+      current = '';
+      i += 1;
+    } else if (ch === '|' && command[i + 1] === '|') {
+      segments.push(current);
+      current = '';
+      i += 1;
+    } else {
+      current += ch;
+    }
+  }
+  segments.push(current);
+  return segments;
+}
+
+// Package-manager flags that take a separate value; the install verb can
+// sit behind any number of them (`npm --prefix . install react`), so the
+// verb search must skip flag values instead of expecting the verb early.
+const PM_VALUE_FLAGS = new Set([
+  '--prefix',
+  '--workspace',
+  '--cwd',
+  '-C',
+  '--dir',
+  '--registry',
+  '--userconfig',
+  '--user-config',
+  '--python',
+  '--global-folder',
+  '--modules-dir',
+  '--store-dir',
+  '--cache',
+  '--loglevel',
+  '--filter',
+]);
+
 function bannedInstall(command) {
-  if (!INSTALL_CMD.test(command)) return null;
-  for (const raw of command.split(/\s+/)) {
-    const token = raw.replace(/^['"]|['"]$/g, '');
-    const name = token.replace(/(?!^)@.*$/, '');
-    if (name in BANNED_DEPS) return name;
+  // Tokenize loosely: separators are spaced first so a glued `react&&echo`
+  // or `react;` still yields a clean `react` token, and surrounding
+  // quotes / a leading subshell paren are punctuation, not part of a word.
+  const tokens = command
+    .replace(/&&|\|\||;/g, ' $& ')
+    .split(/\s+/)
+    .map((raw) => raw.replace(/^[('"]+/, '').replace(/['")]+$/, ''))
+    .filter(Boolean);
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (!/^(?:npm|pnpm|yarn|bun)$/.test(tokens[i])) continue;
+    // Find this invocation's verb: the first bare token after the manager
+    // name, skipping flags and the values of flags that take one.
+    let verbIndex = -1;
+    for (let j = i + 1; j < tokens.length; j += 1) {
+      const token = tokens[j];
+      if (token === '&&' || token === '||' || token === ';' || token === '|') break;
+      if (token.startsWith('-')) {
+        if (!token.includes('=') && PM_VALUE_FLAGS.has(token)) j += 1;
+        continue;
+      }
+      verbIndex = j;
+      break;
+    }
+    if (verbIndex === -1) continue;
+    let verb = tokens[verbIndex];
+    // yarn classic puts a `global` modifier before the verb
+    // (`yarn global add react`) — step over it, and over any flags (and
+    // their values) between it and the real verb.
+    if (tokens[i] === 'yarn' && verb === 'global') {
+      let next = -1;
+      for (let j = verbIndex + 1; j < tokens.length; j += 1) {
+        const token = tokens[j];
+        if (token === '&&' || token === '||' || token === ';' || token === '|') break;
+        if (token.startsWith('-')) {
+          if (!token.includes('=') && PM_VALUE_FLAGS.has(token)) j += 1;
+          continue;
+        }
+        next = j;
+        break;
+      }
+      if (next === -1) continue;
+      verbIndex = next;
+      verb = tokens[verbIndex];
+    }
+    if (verb !== 'install' && verb !== 'add' && verb !== 'i') continue;
+    // Only the arguments of this invocation count — a banned name that is
+    // merely mentioned elsewhere in the command is not an install.
+    for (let k = verbIndex + 1; k < tokens.length; k += 1) {
+      const token = tokens[k];
+      if (token === '&&' || token === '||' || token === ';' || token === '|') break;
+      const name = token.replace(/(?!^)@.*$/, '');
+      if (name in BANNED_DEPS) return name;
+    }
   }
   return null;
 }
@@ -135,9 +321,17 @@ function preToolGate(agent, payload) {
         `solid2-agent-kit guardrail: do not install "${banned}". ${BANNED_DEPS[banned]} (\`solid2-kit doctor\` fails on it.)`,
       );
     }
-    if (SHELL_WRITE.test(command)) {
-      if (GUARDRAIL_PATH.test(command)) deny(TAMPER_MESSAGE);
-      if (/(?:\.claude\/settings\.json|\.cursor\/hooks\.json)/.test(command)) {
+    // Judge each command segment on its own: a write verb in one segment
+    // must not condemn a protected path that another segment only reads
+    // (`npm install lodash && cat .claude/settings.json` is fine; the same
+    // path under a write verb or an inline-eval interpreter is not).
+    // Variable expansion uses the whole command, since an assignment can
+    // sit in an earlier segment than its use.
+    const expanded = expandShellVars(command);
+    for (const segment of splitSegments(expanded)) {
+      if (!SHELL_WRITE.test(segment) && !SHELL_EVAL.test(segment)) continue;
+      if (GUARDRAIL_PATH.test(segment)) deny(TAMPER_MESSAGE);
+      if (/(?:\.claude\/settings\.json|\.cursor\/hooks\.json)/.test(segment)) {
         deny(
           'solid2-agent-kit guardrail: rewriting hook configs through the shell cannot be verified. Use the Edit tool (keeping the solid2-agent-kit hook entries), or ask the user.',
         );
