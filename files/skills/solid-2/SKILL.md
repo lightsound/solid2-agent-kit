@@ -2509,11 +2509,13 @@ return <View value="now" />;
 ## Checking the official docs
 
 Solid 2.0 docs: https://docs.solidjs.com/ — the canonical site serves every
-page as plain markdown, so an agent fetches it directly:
+page as plain markdown, and its index and corpus fetch cleanly:
 
 - Index of all pages: `https://docs.solidjs.com/llms.txt`
 - Single-file corpus: `https://docs.solidjs.com/llms-full.txt`
-- Any page: append `.md`, e.g. `https://docs.solidjs.com/reference/solid-js/reactivity/create-signal.md`
+- Any single page: the canonical host challenges some non-browser clients on
+  per-page routes, so fetch pages from the mirror of the same content —
+  append `.md`, e.g. `https://v2-rebuild--solid-docs-v2.netlify.app/reference/solid-js/reactivity/create-signal.md`
 
 A curated URL list is in [references/official-docs.md](references/official-docs.md).
 Every diagnostic code has its own page under `reference/solid-js/diagnostics/<code-kebab>.md`
