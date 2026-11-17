@@ -45,7 +45,11 @@ export async function probe(h) {
   );
   const moved = client.parsed.includes('</p><div');
   const kept = client.after.includes('</p><div');
-  const named = client.text !== null && client.text.includes('<div>') && client.text.includes('<p>');
+  const named =
+    client.text !== null &&
+    client.text.includes('<div>') &&
+    client.text.includes('<p>') &&
+    client.text.includes('moved it: it now sits in <div>');
   return {
     reproduces: moved && client.warnings === 1 && kept && named,
     observed: `server HTML ${JSON.stringify(server.html)}; the DOM parser rebuilt it as ${JSON.stringify(client.parsed)}; hydration warned [INVALID_HTML_NESTING] ${client.warnings}x, naming the child and parent (${client.text ? client.text.slice(0, 160) : 'none'}); after hydration the tree is still the parser's: ${JSON.stringify(client.after)}`,

@@ -30,8 +30,9 @@ for (let i = 0; i < ordered.length; i++) {
 }
 
 // Dist-tags of the watched packages as published when the baseline was last moved:
-// the pick must skip other majors (`latest` on the Solid 1 lines) and take the
-// newest tag even when `latest` is ahead of `next`.
+// the pick must skip other majors (the 1.x tags — `v1-latest`, `beta`, and
+// testing-library's 0.8 `latest`) and take the newest tag even when `latest`
+// is ahead of `next`.
 const snapshot = [
   ['solid-js', 2, { beta: '1.10.0-beta.0', 'v1-latest': '1.9.19', latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
   ['@solidjs/web', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
