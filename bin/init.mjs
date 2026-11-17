@@ -228,7 +228,7 @@ export function init() {
   if (hooksNote) console.log(`  note: ${hooksNote}`);
   if (!hasDiagnosticsDependency(target)) {
     console.log(
-      `  note: the solid-2 skill's development loop drives the dev server's /__solid/diagnostics endpoint; add "@solidjs/diagnostics" to devDependencies (install @solidjs/diagnostics@^${BASELINE['@solidjs/diagnostics'].baseline} — npm \`latest\` can be an older rc) so @solidjs/vite-plugin serves it (auto-on when declared). Without it the fallback is an isDev-guarded attribution.enable({ log: false }).`,
+      `  note: the solid-2 skill's development loop drives the dev server's /__solid/diagnostics endpoint; add "@solidjs/diagnostics" to devDependencies (install @solidjs/diagnostics@^${BASELINE['@solidjs/diagnostics'].baseline} — the release this kit's guidance is verified against; dist-tags lag on parts of the Solid 2 line, so a bare install can resolve an older one) so @solidjs/vite-plugin serves it (auto-on when declared). Without it the fallback is an isDev-guarded attribution.enable({ log: false }).`,
     );
   }
 }

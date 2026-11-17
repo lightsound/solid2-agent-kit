@@ -6,10 +6,12 @@
 // probe was verified against — bump it (and fix any marked claim that changed)
 // after re-verifying.
 //
-// npm dist-tags lag each other on these prereleases (@solidjs/web, @solidjs/signals
-// and @solidjs/diagnostics `latest` is an older 2.0 rc than `next`;
-// @solidjs/vite-plugin's `next` is behind `latest`), so a bare install can
-// resolve a release older than the baseline.
+// npm dist-tags lag each other on parts of this line (@solidjs/vite-plugin
+// has no stable 3.0.0: its `latest` is 3.0.0-next.57 and its `next` trails
+// that; @solidjs/testing-library's `latest` is still the 0.8 line while
+// 1.0.0-rc.2 sits on `next`; the core packages' `next` still points at
+// 2.0.0-rc.23, behind their 2.0.0 `latest`), so a bare install can resolve
+// a release older than the baseline.
 //
 // The JSX compilers (@solidjs/compiler, native and the default;
 // @solidjs/babel-plugin under `compiler: "babel"`) are listed because compiled
@@ -19,13 +21,13 @@
 // pulls them in — so doctor also checks an undeclared install of any package
 // here, which is where a lockfile holds an older compiler.
 export const BASELINE = {
-  'solid-js': { line: 2, baseline: '2.0.0-rc.21' },
-  '@solidjs/web': { line: 2, baseline: '2.0.0-rc.21' },
-  '@solidjs/signals': { line: 2, baseline: '2.0.0-rc.21' },
-  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0-rc.21' },
-  '@solidjs/compiler': { line: 2, baseline: '2.0.0-rc.21' },
-  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0-rc.21' },
-  '@solidjs/router': { line: 2, baseline: '2.0.0-next.44' },
+  'solid-js': { line: 2, baseline: '2.0.0' },
+  '@solidjs/web': { line: 2, baseline: '2.0.0' },
+  '@solidjs/signals': { line: 2, baseline: '2.0.0' },
+  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0' },
+  '@solidjs/compiler': { line: 2, baseline: '2.0.0' },
+  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0' },
+  '@solidjs/router': { line: 2, baseline: '2.0.0' },
   '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.57' },
   '@solidjs/testing-library': { line: 1, baseline: '1.0.0-rc.2' },
 };
