@@ -1323,10 +1323,12 @@ still pumping into a document render — declare it `live()`), `[SSR_LIVE_HOLE_L
 markup it last sent; create async sources in the component body), and
 `[REVEAL_IN_RENDER_TO_STRING]`.
 Hydration has a render check of its own since 2.0.0: `[INVALID_HTML_NESTING]`,
-when a hydrating insert claims an element the browser's parser moved out of
-its parent — invalid nesting across a component boundary (`<div>` in `<p>`,
-`<a>` in `<a>`, `<tr>` directly in `<table>`; the compiler rejects it inside
-one template, so it almost always spans a boundary)
+when a hydrating insert claims an element the browser's parser rebuilt —
+invalid nesting across a component boundary (`<div>` in `<p>` or `<a>` in
+`<a>`, where the parser moves the inner element out of its parent; `<tr>`
+directly in `<table>`, where it inserts the `<tbody>` the template lacks;
+the compiler rejects it inside one template, so it almost always spans a
+boundary)
 <!-- upstream:invalid-html-nesting -->. Hydration keeps the parser's tree, so
 the page differs from a client render and the moved node cannot be updated
 through its template parent: change the outer element, move the inner element

@@ -40,12 +40,14 @@ export async function probe(h) {
      const { hydrate, createComponent } = await import("@solidjs/web");
      hydrate(() => createComponent(App, {}), mount);
      const nesting = warnings.filter((x) => x.includes("[INVALID_HTML_NESTING]"));
-     console.log(JSON.stringify({ parsed, warnings: nesting.length, first: nesting[0]?.slice(0, 160) ?? null }));`,
+     console.log(JSON.stringify({ parsed, after: mount.innerHTML, warnings: nesting.length, text: nesting[0] ?? null }));`,
     { conditions: ['browser', 'development'] },
   );
   const moved = client.parsed.includes('</p><div');
+  const kept = client.after.includes('</p><div');
+  const named = client.text !== null && client.text.includes('<div>') && client.text.includes('<p>');
   return {
-    reproduces: moved && client.warnings === 1,
-    observed: `server HTML ${JSON.stringify(server.html)}; the DOM parser rebuilt it as ${JSON.stringify(client.parsed)}; hydration warned [INVALID_HTML_NESTING] ${client.warnings}x (${client.first ?? 'none'})`,
+    reproduces: moved && client.warnings === 1 && kept && named,
+    observed: `server HTML ${JSON.stringify(server.html)}; the DOM parser rebuilt it as ${JSON.stringify(client.parsed)}; hydration warned [INVALID_HTML_NESTING] ${client.warnings}x, naming the child and parent (${client.text ? client.text.slice(0, 160) : 'none'}); after hydration the tree is still the parser's: ${JSON.stringify(client.after)}`,
   };
 }

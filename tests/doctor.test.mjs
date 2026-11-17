@@ -311,7 +311,7 @@ if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "
 }
 
 // The JSX compilers come in through @solidjs/vite-plugin, undeclared; a
-// lockfile can hold one below the baseline. Their own `latest` (rc.2) and
+// lockfile can hold one below the baseline. Their own `latest` (2.0.0) and
 // another major's copy are judged only when they are what node_modules has.
 const transitive = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-transitive-'));
 process.on('exit', () => rmSync(transitive, { recursive: true, force: true }));
