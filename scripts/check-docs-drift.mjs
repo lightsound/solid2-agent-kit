@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { verifyMarkers } from './upstream-probes/registry.mjs';
 
 const KIT_ROOT = fileURLToPath(new URL('..', import.meta.url));
-const CORPUS_URL = 'https://v2-rebuild--solid-docs-v2.netlify.app/llms-full.txt';
+const CORPUS_URL = 'https://docs.solidjs.com/llms-full.txt';
 
 // Non-create* APIs the kit content recommends. create* primitives are
 // auto-extracted from files/ below, so only list the rest here.
@@ -185,7 +185,7 @@ if (!response.ok) {
 }
 const corpus = await response.text();
 if (corpus.length < 10_000) {
-  console.error(`docs-drift — corpus suspiciously small (${corpus.length} bytes); mirror may have moved.`);
+  console.error(`docs-drift — corpus suspiciously small (${corpus.length} bytes); the docs site may have moved.`);
   process.exit(2);
 }
 

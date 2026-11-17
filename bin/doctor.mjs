@@ -24,18 +24,21 @@ export const BANNED_DEPS = {
   vinxi: 'SolidStart 1.x toolchain. Solid 2 uses @solidjs/vite-plugin directly.',
 };
 
-// Packages whose npm `latest` dist-tag is still the Solid 1.x line (solid-js
-// 1.9, @solidjs/router 1.0, @solidjs/meta 0.29, @solidjs/testing-library 0.8,
-// @tanstack/solid-router 1.x, @tanstack/solid-query 5.x): a bare
-// `pnpm add <name>` installs it. The Solid 2 releases are published under
-// `next` (TanStack: `rc` — solid-router 2.0.0-rc.x, solid-query 6.0.0-rc.x).
+// Packages whose Solid 1.x line a project can still be holding: for
+// @solidjs/meta (0.29) and @solidjs/testing-library (0.8) npm `latest` is
+// still that line, and the TanStack packages (@tanstack/solid-router 1.x,
+// @tanstack/solid-query 5.x) publish their Solid 2 lines only on `rc`.
+// solid-js and @solidjs/router are here for the opposite reason: since the
+// 2.0.0 release their `latest` is the 2.x line itself, so a 1.x declaration
+// (1.9 / 1.0) is a pre-2.0 project that never moved — flag it and name the
+// plain install, not a dist-tag (`next` still points at a 2.0.0 prerelease).
 const SOLID2_LINE_PACKAGES = [
-  { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01](?:\.|$)/, fix: 'Install solid-js@next (^2).' },
+  { name: 'solid-js', id: 'solid-js-version', solid1: /^[\s^~=v]*[01](?:\.|$)/, fix: 'Install solid-js@^2.' },
   {
     name: '@solidjs/router',
     id: 'router-version',
     solid1: /^[\s^~=v]*[01](?:\.|$)/,
-    fix: 'Router 1.x is JSX <Route> with a solid-js ^1 peer; install @solidjs/router@next (2.x, createRouter({ routes })).',
+    fix: 'Router 1.x is JSX <Route> with a solid-js ^1 peer; install @solidjs/router@^2 (createRouter({ routes })).',
   },
   {
     name: '@solidjs/meta',
@@ -64,9 +67,10 @@ const SOLID2_LINE_PACKAGES = [
 ];
 
 // Packages doctor checks the version of: the Solid 1.x lines above, then any
-// release older than the kit's baseline (bin/baseline.mjs) — a bare
-// `npm i @solidjs/web` installs `latest`, 2.0.0-rc.0, which the current
-// @solidjs/vite-plugin's `@solidjs/web ^2.0.0-rc.13` peer rejects.
+// release older than the kit's baseline (bin/baseline.mjs) — dist-tags still
+// lag on parts of the line (@solidjs/vite-plugin's `next` trails its
+// `latest`; @solidjs/testing-library's `latest` is the 0.x line), so a bare
+// install can resolve a release older than the baseline.
 const VERSION_CHECKED = [...new Set([...SOLID2_LINE_PACKAGES.map((p) => p.name), ...Object.keys(BASELINE)])];
 
 // The lower bound of a single-comparator range ("^2.0.0-rc.0", "~2.0.0-rc.8",
@@ -83,7 +87,7 @@ function versionProblem(name, version, declared) {
   const lowest = version.match(LOWER_BOUND)?.[1];
   if (baseline && lowest && compareVersions(lowest, baseline) < 0) {
     const older = declared ? 'allows releases older than' : 'older than';
-    return `${older} ${baseline}, the release this kit's guidance is verified against (npm dist-tags lag on the Solid 2 prereleases, so a bare install can resolve an older one). Install ${name}@^${baseline}.`;
+    return `${older} ${baseline}, the release this kit's guidance is verified against (npm dist-tags lag on parts of the Solid 2 line, so a bare install can resolve an older one). Install ${name}@^${baseline}.`;
   }
   return null;
 }
