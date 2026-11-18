@@ -34,12 +34,12 @@ for (let i = 0; i < ordered.length; i++) {
 // testing-library's 0.8 `latest`) and take the newest tag even when `latest`
 // is ahead of `next`.
 const snapshot = [
-  ['solid-js', 2, { beta: '1.10.0-beta.0', 'v1-latest': '1.9.19', latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
-  ['@solidjs/web', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
-  ['@solidjs/signals', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
-  ['@solidjs/diagnostics', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
-  ['@solidjs/compiler', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
-  ['@solidjs/babel-plugin', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
+  ['solid-js', 2, { beta: '1.10.0-beta.0', 'v1-latest': '1.9.19', latest: '2.0.1', next: '2.0.0-rc.23' }, '2.0.1'],
+  ['@solidjs/web', 2, { latest: '2.0.1', next: '2.0.0-rc.23' }, '2.0.1'],
+  ['@solidjs/signals', 2, { latest: '2.0.1', next: '2.0.0-rc.23' }, '2.0.1'],
+  ['@solidjs/diagnostics', 2, { latest: '2.0.1', next: '2.0.0-rc.23' }, '2.0.1'],
+  ['@solidjs/compiler', 2, { latest: '2.0.1', next: '2.0.0-rc.23' }, '2.0.1'],
+  ['@solidjs/babel-plugin', 2, { latest: '2.0.1', next: '2.0.0-rc.23' }, '2.0.1'],
   ['@solidjs/router', 2, { beta: '0.10.0-beta.9', next: '2.0.0-next.44', latest: '2.0.0', 'v1-latest': '1.0.3' }, '2.0.0'],
   ['@solidjs/vite-plugin', 3, { next: '3.0.0-next.35', latest: '3.0.1' }, '3.0.1'],
   ['@solidjs/testing-library', 1, { latest: '0.8.10', next: '1.0.0-rc.2' }, '1.0.0-rc.2'],
