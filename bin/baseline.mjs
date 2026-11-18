@@ -10,7 +10,7 @@
 // `next` is 3.0.0-next.35, behind its 3.0.1 `latest`;
 // @solidjs/testing-library's `latest` is still the 0.8 line while
 // 1.0.0-rc.2 sits on `next`; the core packages' `next` still points at
-// 2.0.0-rc.23, behind their 2.0.0 `latest`), so a bare install can resolve
+// 2.0.0-rc.23, behind their 2.0.1 `latest`), so a bare install can resolve
 // a release older than the baseline.
 //
 // The JSX compilers (@solidjs/compiler, native and the default;
