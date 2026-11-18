@@ -1,9 +1,9 @@
 {
   "name": "doctor-clean-fixture",
   "dependencies": {
-    "solid-js": "^2.0.0",
-    "@solidjs/web": "^2.0.0",
-    "@solidjs/signals": "^2.0.0",
+    "solid-js": "^2.0.1",
+    "@solidjs/web": "^2.0.1",
+    "@solidjs/signals": "^2.0.1",
     "@solidjs/router": "^2.0.0",
     "@solidjs/meta": "^1.0.0-next.2",
     "@tanstack/solid-router": "^2.0.0-rc.8",
@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@solidjs/vite-plugin": "^3.0.1",
-    "@solidjs/diagnostics": "^2.0.0",
+    "@solidjs/diagnostics": "^2.0.1",
     "@solidjs/testing-library": "^1.0.0",
     "vite": "^8.0.0"
   }

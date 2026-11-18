@@ -70,7 +70,7 @@ const synced = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-'));
 process.on('exit', () => rmSync(synced, { recursive: true, force: true }));
 writeFileSync(
   join(synced, 'package.json'),
-  JSON.stringify({ name: 'consumer', devDependencies: { 'solid-js': '^2.0.0' } }, null, 2),
+  JSON.stringify({ name: 'consumer', devDependencies: { 'solid-js': '^2.0.1' } }, null, 2),
 );
 const sync = spawnSync(process.execPath, [kit, 'sync', '--no-hooks', '--target', synced], {
   encoding: 'utf8',
@@ -202,8 +202,8 @@ for (const { name, id, bad, good } of [
     ],
   },
   // Solid 2 prereleases older than the kit's baseline (bin/baseline.mjs):
-  // the whole rc line (rc.0–rc.23, the previous baseline rc.21 included) is
-  // below the 2.0.0 floor now, and @solidjs/vite-plugin's whole next line
+  // the whole rc line (rc.0–rc.23) and 2.0.0 (the previous baseline) are
+  // below the 2.0.1 floor now, and @solidjs/vite-plugin's whole next line
   // (through next.57, the previous baseline) is below its 3.0.1 floor; its
   // `next` tag (3.0.0-next.35) trails its `latest`. The stable releases on
   // `latest` must pass.
@@ -223,13 +223,15 @@ for (const { name, id, bad, good } of [
         ['^2.0.0-rc.15', undefined, 'declared ^2.0.0-rc.15'],
         ['^2.0.0-rc.17', undefined, 'declared ^2.0.0-rc.17'],
         ['^2.0.0-rc.19', undefined, 'declared ^2.0.0-rc.19'],
-        ['^2.0.0-rc.21', undefined, 'declared ^2.0.0-rc.21 (the previous baseline)'],
+        ['^2.0.0-rc.21', undefined, 'declared ^2.0.0-rc.21'],
         ['next', '2.0.0-rc.23', 'installed from `next` (2.0.0-rc.23, the last prerelease)'],
+        ['latest', '2.0.0', 'installed from `latest` (2.0.0, the previous baseline)'],
+        ['^2.0.0', undefined, 'declared ^2.0.0 (the previous baseline)'],
       ],
       good: [
-        ['latest', '2.0.0', 'installed from `latest` (the stable)'],
-        ['^2.0.0', undefined, 'declared ^2.0.0'],
-        ['latest', '2.0.0+build.1', 'installed 2.0.0 with build metadata'],
+        ['latest', '2.0.1', 'installed from `latest` (the stable)'],
+        ['^2.0.1', undefined, 'declared ^2.0.1'],
+        ['latest', '2.0.1+build.1', 'installed 2.0.1 with build metadata'],
         ['*', undefined, 'declared * but not installed yet'],
       ],
     };
@@ -264,12 +266,14 @@ for (const { name, id, bad, good } of [
       ['^2.0.0-rc.15', undefined, 'declared ^2.0.0-rc.15'],
       ['^2.0.0-rc.17', undefined, 'declared ^2.0.0-rc.17'],
       ['^2.0.0-rc.19', undefined, 'declared ^2.0.0-rc.19'],
-      ['^2.0.0-rc.21', undefined, 'declared ^2.0.0-rc.21 (the previous baseline)'],
+      ['^2.0.0-rc.21', undefined, 'declared ^2.0.0-rc.21'],
       ['next', '2.0.0-beta.30', 'installed 2.0.0-beta.30'],
+      ['latest', '2.0.0', 'installed from `latest` (2.0.0, the previous baseline)'],
+      ['^2.0.0', undefined, 'declared ^2.0.0 (the previous baseline)'],
     ],
     good: [
-      ['latest', '2.0.0', 'installed from `latest` (the stable)'],
-      ['^2.0.0', undefined, 'declared ^2.0.0'],
+      ['latest', '2.0.1', 'installed from `latest` (the stable)'],
+      ['^2.0.1', undefined, 'declared ^2.0.1'],
     ],
   },
   {
@@ -304,18 +308,18 @@ for (const { name, id, bad, good } of [
 // The stale-baseline message names the package, what resolved, and the range to install.
 const staleWeb = lineRun('@solidjs/web', 'latest', '2.0.0-rc.0');
 if (
-  !staleWeb.stderr.includes('[web-version] node_modules has @solidjs/web 2.0.0-rc.0 (package.json: "latest") — older than 2.0.0') ||
-  !staleWeb.stderr.includes('Install @solidjs/web@^2.0.0.')
+  !staleWeb.stderr.includes('[web-version] node_modules has @solidjs/web 2.0.0-rc.0 (package.json: "latest") — older than 2.0.1') ||
+  !staleWeb.stderr.includes('Install @solidjs/web@^2.0.1.')
 ) {
   fail('expected the web-version finding to name the resolved rc and the baseline range to install', staleWeb);
 }
 const lowFloorWeb = lineRun('@solidjs/web', '^2.0.0-rc.0', '2.0.0-rc.16');
-if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "^2.0.0-rc.0" — allows releases older than 2.0.0')) {
+if (!lowFloorWeb.stderr.includes('[web-version] package.json pins @solidjs/web "^2.0.0-rc.0" — allows releases older than 2.0.1')) {
   fail('expected a declared range below the baseline to be reported as allowing older releases', lowFloorWeb);
 }
 
 // The JSX compilers come in through @solidjs/vite-plugin, undeclared; a
-// lockfile can hold one below the baseline. Their own `latest` (2.0.0) and
+// lockfile can hold one below the baseline. Their own `latest` (2.0.1) and
 // another major's copy are judged only when they are what node_modules has.
 const transitive = mkdtempSync(join(tmpdir(), 'solid2-kit-doctor-transitive-'));
 process.on('exit', () => rmSync(transitive, { recursive: true, force: true }));
@@ -333,18 +337,18 @@ for (const [name, id] of [
   ['@solidjs/compiler', 'compiler-version'],
   ['@solidjs/babel-plugin', 'babel-plugin-version'],
 ]) {
-  for (const oldVersion of ['2.0.0-rc.16', '2.0.0-rc.21']) {
+  for (const oldVersion of ['2.0.0-rc.16', '2.0.0-rc.21', '2.0.0']) {
     const old = transitiveRun(name, oldVersion);
     if (
       old.status === 0 ||
-      !old.stderr.includes(`[${id}] node_modules has ${name} ${oldVersion} (not in package.json) — older than 2.0.0`) ||
+      !old.stderr.includes(`[${id}] node_modules has ${name} ${oldVersion} (not in package.json) — older than 2.0.1`) ||
       !old.stderr.includes(`npm update ${name}`)
     ) {
       fail(`expected an undeclared ${name} ${oldVersion} to fail doctor with ${id} and name the update`, old);
     }
   }
   for (const [installed, label] of [
-    ['2.0.0', 'at the baseline (the stable)'],
+    ['2.0.1', 'at the baseline (the stable)'],
     ['1.9.0', 'on another major'],
   ]) {
     const result = transitiveRun(name, installed);
@@ -364,4 +368,4 @@ for (const id of ['solid-js-version', 'router-version', 'meta-version']) {
   if (!bareMajorRun.stderr.includes(`[${id}]`)) fail(`expected a bare-major range to be reported as ${id}`, bareMajorRun);
 }
 
-console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router 1.0.0 install and last prerelease caught, the stable passed; TanStack Router 1.x / TanStack Query 5.x / Testing Library 0.x declared or installed caught, rc/next lines passed; Solid 2 prereleases older than the baseline (web/signals/diagnostics, vite-plugin) caught, the stable passed; undeclared JSX compilers below the baseline caught, at/above it or on another major passed; bare-major 1.x ranges caught)`);
+console.log(`doctor fixtures — OK (clean passed; bad reported ${expected.join(', ')}; freshly synced guidance not flagged stale; stale version still caught; router 1.0.0 install and last prerelease caught, the stable passed; TanStack Router 1.x / TanStack Query 5.x / Testing Library 0.x declared or installed caught, rc/next lines passed; Solid 2 prereleases and 2.0.0 (the previous baseline) older than the baseline (web/signals/diagnostics, vite-plugin) caught, the 2.0.1 stable passed; undeclared JSX compilers below the baseline caught, at/above it or on another major passed; bare-major 1.x ranges caught)`);

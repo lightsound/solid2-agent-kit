@@ -21,12 +21,12 @@
 // pulls them in — so doctor also checks an undeclared install of any package
 // here, which is where a lockfile holds an older compiler.
 export const BASELINE = {
-  'solid-js': { line: 2, baseline: '2.0.0' },
-  '@solidjs/web': { line: 2, baseline: '2.0.0' },
-  '@solidjs/signals': { line: 2, baseline: '2.0.0' },
-  '@solidjs/diagnostics': { line: 2, baseline: '2.0.0' },
-  '@solidjs/compiler': { line: 2, baseline: '2.0.0' },
-  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0' },
+  'solid-js': { line: 2, baseline: '2.0.1' },
+  '@solidjs/web': { line: 2, baseline: '2.0.1' },
+  '@solidjs/signals': { line: 2, baseline: '2.0.1' },
+  '@solidjs/diagnostics': { line: 2, baseline: '2.0.1' },
+  '@solidjs/compiler': { line: 2, baseline: '2.0.1' },
+  '@solidjs/babel-plugin': { line: 2, baseline: '2.0.1' },
   '@solidjs/router': { line: 2, baseline: '2.0.0' },
   '@solidjs/vite-plugin': { line: 3, baseline: '3.0.1' },
   '@solidjs/testing-library': { line: 1, baseline: '1.0.0-rc.2' },
