@@ -41,7 +41,7 @@ const snapshot = [
   ['@solidjs/compiler', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
   ['@solidjs/babel-plugin', 2, { latest: '2.0.0', next: '2.0.0-rc.23' }, '2.0.0'],
   ['@solidjs/router', 2, { beta: '0.10.0-beta.9', next: '2.0.0-next.44', latest: '2.0.0', 'v1-latest': '1.0.3' }, '2.0.0'],
-  ['@solidjs/vite-plugin', 3, { next: '3.0.0-next.35', latest: '3.0.0-next.57' }, '3.0.0-next.57'],
+  ['@solidjs/vite-plugin', 3, { next: '3.0.0-next.35', latest: '3.0.1' }, '3.0.1'],
   ['@solidjs/testing-library', 1, { latest: '0.8.10', next: '1.0.0-rc.2' }, '1.0.0-rc.2'],
 ];
 for (const [name, line, tags, want] of snapshot) {

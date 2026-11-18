@@ -6,11 +6,11 @@
 // probe was verified against — bump it (and fix any marked claim that changed)
 // after re-verifying.
 //
-// npm dist-tags lag each other on parts of this line (@solidjs/vite-plugin
-// has no stable 3.0.0: its `latest` is 3.0.0-next.57 and its `next` trails
-// that; @solidjs/testing-library's `latest` is still the 0.8 line while
+// npm dist-tags lag each other on parts of this line (@solidjs/vite-plugin's
+// `next` is 3.0.0-next.35, behind its 3.0.1 `latest`;
+// @solidjs/testing-library's `latest` is still the 0.8 line while
 // 1.0.0-rc.2 sits on `next`; the core packages' `next` still points at
-// 2.0.0-rc.23, behind their 2.0.0 `latest`), so a bare install can resolve
+// 2.0.0-rc.23, behind their 2.0.1 `latest`), so a bare install can resolve
 // a release older than the baseline.
 //
 // The JSX compilers (@solidjs/compiler, native and the default;
@@ -28,7 +28,7 @@ export const BASELINE = {
   '@solidjs/compiler': { line: 2, baseline: '2.0.0' },
   '@solidjs/babel-plugin': { line: 2, baseline: '2.0.0' },
   '@solidjs/router': { line: 2, baseline: '2.0.0' },
-  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.0-next.57' },
+  '@solidjs/vite-plugin': { line: 3, baseline: '3.0.1' },
   '@solidjs/testing-library': { line: 1, baseline: '1.0.0-rc.2' },
 };
 
