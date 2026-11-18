@@ -203,9 +203,10 @@ for (const { name, id, bad, good } of [
   },
   // Solid 2 prereleases older than the kit's baseline (bin/baseline.mjs):
   // the whole rc line (rc.0–rc.23, the previous baseline rc.21 included) is
-  // below the 2.0.0 floor now, and @solidjs/vite-plugin's `next`
-  // (3.0.0-next.35) trails its `latest`. The stable releases on `latest`
-  // must pass.
+  // below the 2.0.0 floor now, and @solidjs/vite-plugin's whole next line
+  // (through next.57, the previous baseline) is below its 3.0.1 floor; its
+  // `next` tag (3.0.0-next.35) trails its `latest`. The stable releases on
+  // `latest` must pass.
   ...['@solidjs/web', '@solidjs/signals', '@solidjs/diagnostics'].map((name) => {
     const stale = name === '@solidjs/diagnostics' ? '2.0.0-rc.2' : '2.0.0-rc.0';
     return {
@@ -238,16 +239,19 @@ for (const { name, id, bad, good } of [
     id: 'vite-plugin-version',
     bad: [
       ['next', '3.0.0-next.35', 'installed from `next` (3.0.0-next.35)'],
+      ['latest', '3.0.0-next.57', 'installed from `latest` (3.0.0-next.57, the previous baseline)'],
       ['^3.0.0-next.35', undefined, 'declared ^3.0.0-next.35'],
       ['^3.0.0-next.47', undefined, 'declared ^3.0.0-next.47'],
       ['^3.0.0-next.50', undefined, 'declared ^3.0.0-next.50'],
       ['^3.0.0-next.51', undefined, 'declared ^3.0.0-next.51'],
-      ['^3.0.0-next.52', undefined, 'declared ^3.0.0-next.52 (the previous baseline)'],
+      ['^3.0.0-next.52', undefined, 'declared ^3.0.0-next.52'],
+      ['^3.0.0-next.57', undefined, 'declared ^3.0.0-next.57 (the previous baseline)'],
+      ['^3.0.0', undefined, 'declared ^3.0.0 (stable, below the baseline)'],
     ],
     good: [
-      ['latest', '3.0.0-next.57', 'installed from `latest`'],
-      ['^3.0.0-next.57', undefined, 'declared ^3.0.0-next.57'],
-      ['^3.0.0', undefined, 'declared ^3.0.0 (stable)'],
+      ['latest', '3.0.1', 'installed from `latest` (the stable)'],
+      ['^3.0.1', undefined, 'declared ^3.0.1'],
+      ['latest', '3.0.1+build.1', 'installed 3.0.1 with build metadata'],
     ],
   },
   {
